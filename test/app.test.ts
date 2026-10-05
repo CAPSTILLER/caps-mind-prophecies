@@ -5,7 +5,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 describe('app local mode', () => {
-  it('lists seeded prophecy and serves gallery HTML', async () => {
+  it('lists seeded prophecies and serves gallery HTML', async () => {
     const dataDir = path.join(process.cwd(), 'data');
     await mkdir(dataDir, { recursive: true });
     await rm(path.join(dataDir, 'prophecies.json'), { force: true });
@@ -20,24 +20,36 @@ describe('app local mode', () => {
     const list = await app.request('http://x/api/prophecies');
     const body = await list.json();
     expect(body.source).toBe('local');
-    expect(body.prophecies).toHaveLength(1);
-    expect(body.prophecies[0].id).toBe(1);
-    expect(body.prophecies[0].description).toContain('CAPs mind, they float where the bamboo ends');
-    expect(body.prophecies[0].imageUri).toBe('/prophecies/1.png');
-    expect(body.prophecies[0].nextPriceWholeGear).toBe(1);
+    expect(body.prophecies).toHaveLength(2);
+
+    const byId = Object.fromEntries(body.prophecies.map((p: { id: number }) => [p.id, p]));
+    expect(byId[1].description).toContain('it bends but never breaks');
+    expect(byId[1].imageUri).toBe('/prophecies/1.png');
+    expect(byId[1].nextPriceWholeGear).toBe(1);
+    expect(byId[2].description).toContain('CAPs mind, they float where the bamboo ends');
+    expect(byId[2].imageUri).toBe('/prophecies/2.png');
+    expect(byId[2].nextPriceWholeGear).toBe(1);
 
     const home = await app.request('http://x/');
     expect(home.status).toBe(200);
     const html = await home.text();
     expect(html).toContain('/prophecies/1.png');
+    expect(html).toContain('/prophecies/2.png');
+    expect(html).toContain('it bends but never breaks');
     expect(html).toContain('CAPs mind, they float where the bamboo ends');
     expect(html).toContain('Demo mode');
 
-    const detail = await app.request('http://x/prophecy/1');
-    expect(detail.status).toBe(200);
-    const dhtml = await detail.text();
-    expect(dhtml).toContain('/prophecies/1.png');
-    expect(dhtml).toContain('based enough to call it home');
+    const detail1 = await app.request('http://x/prophecy/1');
+    expect(detail1.status).toBe(200);
+    const d1 = await detail1.text();
+    expect(d1).toContain('/prophecies/1.png');
+    expect(d1).toContain('shall never B blown');
+
+    const detail2 = await app.request('http://x/prophecy/2');
+    expect(detail2.status).toBe(200);
+    const d2 = await detail2.text();
+    expect(d2).toContain('/prophecies/2.png');
+    expect(d2).toContain('based enough to call it home');
   });
 
   it('publishes additional local prophecies after seed', async () => {
@@ -63,7 +75,7 @@ describe('app local mode', () => {
     });
     expect(pub.status).toBe(200);
     const published = await pub.json();
-    expect(published.prophecy.id).toBe(2);
+    expect(published.prophecy.id).toBe(3);
     expect(published.prophecy.nextPriceWholeGear).toBe(1);
   });
 });

@@ -24,13 +24,14 @@ async function writeStore(store: StoreFile): Promise<void> {
   await writeFile(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
 }
 
-/** Merge file store over seeds (seed wins for missing ids; file can add more). */
+/** Merge file store over seeds (seed wins for seed ids; file can add more). */
 function merged(store: StoreFile): LocalProphecy[] {
   const byId = new Map<number, LocalProphecy>();
+  const seedIds = new Set(SEED_PROPHECIES.map((s) => s.id));
   for (const p of SEED_PROPHECIES) byId.set(p.id, p);
   for (const p of store.prophecies) {
-    // Do not overwrite the canonical seed prophecy #1 from ephemeral local writes
-    if (p.id === 1 && SEED_PROPHECIES.some((s) => s.id === 1)) continue;
+    // Do not overwrite canonical seed prophecies from ephemeral local writes
+    if (seedIds.has(p.id)) continue;
     byId.set(p.id, p);
   }
   return [...byId.values()];
