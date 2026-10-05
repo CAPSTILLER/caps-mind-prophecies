@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Base64} from "./Base64.sol";
+
 /// @title CapsMindKey
 /// @notice ERC-721 CAPs Mind publisher keys with sequential token IDs (1, 2, 3…).
 ///         Bootstrap: when totalSupply == 0, owner may mint key #1 with no GEAR hold.
 ///         After that, anyone who HOLDS at least 2_000_000 GEAR (balance check only;
 ///         no burn/transfer) may mint a new key. Cap keeps control of GEAR supply so
 ///         lost/sold keys do not strand the app — a new key can be minted by a 2M holder.
+///
+///         Metadata: tokenURI returns on-chain JSON (data URI) with name, description,
+///         `image` (poster/still), and `animation_url` (video for wallet/OpenSea main view).
+///         Owner sets media via setMediaURIs. Optional baseURI override for off-chain JSON.
 ///
 ///         GEAR Base mainnet: 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
 ///         Pass a mock/test GEAR address for Sepolia.
@@ -37,6 +43,7 @@ contract CapsMindKey {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event KeyMinted(address indexed to, uint256 indexed tokenId, address indexed minter);
     event BaseURISet(string baseURI);
+    event MediaURIsSet(string imageURI, string animationURI);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
 
@@ -45,6 +52,9 @@ contract CapsMindKey {
     /// @dev Whole GEAR that must be held (not spent) to mint a key after bootstrap.
     uint256 public constant KEY_HOLD_GEAR = 2_000_000;
 
+    /// @dev Cap's owner / bootstrap mint destination (documented default for deploy).
+    address public constant CAP_OWNER = 0x6C05149910C2dd102032E44b96DA36988950B257;
+
     IERC20Balance public immutable gear;
     uint256 public immutable gearUnit; // 10^decimals
     uint256 public immutable keyHoldAmount; // KEY_HOLD_GEAR * gearUnit
@@ -52,7 +62,13 @@ contract CapsMindKey {
     address public owner;
     address public pendingOwner;
     uint256 public totalSupply;
+    /// @dev Optional off-chain metadata base. When non-empty, tokenURI = baseURI + tokenId
+    ///      (expects hosted JSON with image + animation_url). When empty, on-chain JSON is used.
     string public baseURI;
+    /// @dev Poster / still image URI (OpenSea `image`). Shared by all key tokens until changed.
+    string public imageURI;
+    /// @dev Video URI for primary wallet/OpenSea view (OpenSea `animation_url`).
+    string public animationURI;
     bool public paused;
 
     mapping(uint256 => address) private _ownerOf;
@@ -110,6 +126,15 @@ contract CapsMindKey {
         emit BaseURISet(uri);
     }
 
+    /// @notice Set collection media used in on-chain tokenURI JSON (poster + video).
+    /// @param image_ Poster/still URL (ipfs://… or https://…). Empty until Cap hosts art.
+    /// @param animation_ Video URL for wallet/OpenSea main view. Empty until Cap hosts video.
+    function setMediaURIs(string calldata image_, string calldata animation_) external onlyOwner {
+        imageURI = image_;
+        animationURI = animation_;
+        emit MediaURIsSet(image_, animation_);
+    }
+
     function pause() external onlyOwner {
         paused = true;
         emit Paused(msg.sender);
@@ -153,9 +178,14 @@ contract CapsMindKey {
         return o;
     }
 
+    /// @notice ERC-721 metadata. If `baseURI` is set, returns `baseURI + tokenId` (off-chain JSON).
+    ///         Otherwise returns on-chain `data:application/json;base64,…` with image + animation_url.
     function tokenURI(uint256 tokenId) external view returns (string memory) {
         if (_ownerOf[tokenId] == address(0)) revert BadToken();
-        return string(abi.encodePacked(baseURI, _toString(tokenId)));
+        if (bytes(baseURI).length > 0) {
+            return string(abi.encodePacked(baseURI, _toString(tokenId)));
+        }
+        return _onchainTokenURI(tokenId);
     }
 
     function approve(address spender, uint256 tokenId) external {
@@ -210,6 +240,23 @@ contract CapsMindKey {
         _ownerOf[tokenId] = to;
         _balanceOf[to] += 1;
         emit Transfer(address(0), to, tokenId);
+    }
+
+    function _onchainTokenURI(uint256 tokenId) internal view returns (string memory) {
+        string memory idStr = _toString(tokenId);
+        string memory json = string(
+            abi.encodePacked(
+                '{"name":"CAPs Mind Key #',
+                idStr,
+                '","description":"Publisher key for CAPs Mind Prophecies. An eligible key holder can upload new prophecies. Hold 2,000,000 GEAR to mint additional keys after bootstrap.",',
+                '"image":"',
+                imageURI,
+                '","animation_url":"',
+                animationURI,
+                '"}'
+            )
+        );
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json))));
     }
 
     function _toString(uint256 value) internal pure returns (string memory) {

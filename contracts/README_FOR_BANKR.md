@@ -13,9 +13,9 @@ Do **not** deploy to Base mainnet until Cap says so. The contracts reject plain 
 
 | Position | Name | Type | What to pass |
 | --- | --- | --- | --- |
-| 1 | `initialOwner` | address | Cap's admin wallet (Safe preferred). Bootstraps key #1 and can pause / set baseURI. **Cap provides.** |
+| 1 | `initialOwner` | address | Cap's wallet `0x6C05149910C2dd102032E44b96DA36988950B257` (deploy default). Bootstraps key #1; can pause / set media URIs / baseURI. |
 | 2 | `gearToken` | address | GEAR ERC-20. Mainnet: `0x5880cD05605A549f1DAb01a53ca61Ee559244bD1` (6 decimals). On Sepolia use Cap's mock/test GEAR. |
-| 3 | `baseURI_` | string | Metadata base URI for key tokens (can be empty `""` for now). |
+| 3 | `baseURI_` | string | Leave empty for **on-chain JSON** (`image` + `animation_url` via `setMediaURIs`). Non-empty = off-chain `baseURI + tokenId`. |
 
 **Bootstrap:** when `totalSupply == 0`, only `owner` may call `mint(MINT_KEY_TO)` — **no GEAR hold**. After that, anyone who **holds** ≥ 2,000,000 GEAR (balance check only) may mint additional keys.
 
@@ -50,12 +50,16 @@ Atomic amount = whole GEAR * `10^decimals()` (mainnet GEAR uses 6 decimals).
 
 ```bash
 cd contracts
-export OWNER_ADDRESS=0x...
+# OWNER_ADDRESS / MINT_KEY_TO default to Cap's wallet if unset:
+# 0x6C05149910C2dd102032E44b96DA36988950B257
+export OWNER_ADDRESS=0x6C05149910C2dd102032E44b96DA36988950B257
+export MINT_KEY_TO=0x6C05149910C2dd102032E44b96DA36988950B257
 export TREASURY_ADDRESS=0x...
 export GEAR_VAULT_ADDRESS=0x...
 export GEAR_TOKEN=0x...          # Sepolia mock or mainnet GEAR when Cap says
-export MINT_KEY_TO=0x...         # Cap's wallet that will publish
-export KEY_BASE_URI=
+export KEY_BASE_URI=             # empty → on-chain JSON metadata
+export KEY_IMAGE_URI=            # optional poster (or setMediaURIs post-deploy)
+export KEY_ANIMATION_URI=        # optional video for OpenSea/wallet main view
 export PROP_BASE_URI=
 export BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 
@@ -69,6 +73,15 @@ forge script script/Deploy.s.sol --rpc-url base_sepolia --broadcast --private-ke
 If the deployer is not `OWNER_ADDRESS`, after deploy Cap's owner wallet must call `CapsMindKey.mint(MINT_KEY_TO)` to bootstrap key #1.
 
 Add `--verify` and `BASESCAN_API_KEY` to verify on BaseScan.
+
+## CapsMindKey video metadata
+
+Default path is **on-chain JSON**: `tokenURI` returns `data:application/json;base64,…` with
+`name`, `description`, `image` (poster), and `animation_url` (video). Owner sets media with
+`setMediaURIs(image, animation)` once files are hosted (IPFS/HTTPS). See
+`contracts/metadata/` for the template and hosting notes. Do not invent art — wait for Cap's video.
+
+If `KEY_BASE_URI` / `setBaseURI` is set, off-chain `baseURI + tokenId` is used instead.
 
 ## What to send back to Cap
 
