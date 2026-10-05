@@ -1,15 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { priceForMintNumber } from './config.js';
+import { SEED_PROPHECIES, withNextPrice, type LocalProphecy } from './seed.js';
 
-export type LocalProphecy = {
-  id: number;
-  imageUri: string;
-  description: string;
-  minted: number;
-  publisher: string;
-  publishedAt: number;
-};
+export type { LocalProphecy };
 
 type StoreFile = { prophecies: LocalProphecy[] };
 
@@ -30,26 +24,35 @@ async function writeStore(store: StoreFile): Promise<void> {
   await writeFile(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
 }
 
+/** Merge file store over seeds (seed wins for missing ids; file can add more). */
+function merged(store: StoreFile): LocalProphecy[] {
+  const byId = new Map<number, LocalProphecy>();
+  for (const p of SEED_PROPHECIES) byId.set(p.id, p);
+  for (const p of store.prophecies) {
+    // Do not overwrite the canonical seed prophecy #1 from ephemeral local writes
+    if (p.id === 1 && SEED_PROPHECIES.some((s) => s.id === 1)) continue;
+    byId.set(p.id, p);
+  }
+  return [...byId.values()];
+}
+
 export async function listLocalProphecies(): Promise<
   Array<LocalProphecy & { nextPriceWholeGear: number }>
 > {
   const store = await readStore();
-  return store.prophecies
+  return merged(store)
     .slice()
     .sort((a, b) => b.id - a.id)
-    .map((p) => ({
-      ...p,
-      nextPriceWholeGear: priceForMintNumber(p.minted + 1),
-    }));
+    .map(withNextPrice);
 }
 
 export async function getLocalProphecy(
   id: number,
 ): Promise<(LocalProphecy & { nextPriceWholeGear: number }) | null> {
   const store = await readStore();
-  const p = store.prophecies.find((x) => x.id === id);
+  const p = merged(store).find((x) => x.id === id);
   if (!p) return null;
-  return { ...p, nextPriceWholeGear: priceForMintNumber(p.minted + 1) };
+  return withNextPrice(p);
 }
 
 export async function publishLocal(
@@ -58,7 +61,8 @@ export async function publishLocal(
   publisher: string,
 ): Promise<LocalProphecy & { nextPriceWholeGear: number }> {
   const store = await readStore();
-  const id = store.prophecies.reduce((m, p) => Math.max(m, p.id), 0) + 1;
+  const existing = merged(store);
+  const id = existing.reduce((m, p) => Math.max(m, p.id), 0) + 1;
   const row: LocalProphecy = {
     id,
     imageUri,
@@ -73,6 +77,11 @@ export async function publishLocal(
 }
 
 export async function mintLocal(id: number): Promise<LocalProphecy & { nextPriceWholeGear: number }> {
+  if (SEED_PROPHECIES.some((s) => s.id === id)) {
+    // Demo seed is view-only until contracts deploy
+    const p = SEED_PROPHECIES.find((s) => s.id === id)!;
+    return withNextPrice(p);
+  }
   const store = await readStore();
   const p = store.prophecies.find((x) => x.id === id);
   if (!p) throw new Error('Prophecy not found');

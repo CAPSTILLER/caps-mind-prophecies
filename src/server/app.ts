@@ -10,6 +10,7 @@ import {
   publishLocal,
 } from './localStore.js';
 import { escapeHtml, page } from './pages.js';
+import { SEED_PROPHECIES, withNextPrice } from './seed.js';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -175,19 +176,60 @@ export function createApp(cfg: SiteConfig = configFromEnv()) {
   app.get('/', async (c) => {
     const liveNote = cfg.live
       ? `<div class="banner"><b>Onchain.</b> Gallery reads CapsMindProphecies at <code>${escapeHtml(cfg.propheciesAddress)}</code> on chain ${cfg.chainId}. Mint pays GEAR.</div>`
-      : `<div class="banner"><b>Local demo mode.</b> Contracts not configured yet. Cap can still try publish/gallery against a local JSON store. After Bankr deploys, set <code>KEY_ADDRESS</code> and <code>PROPHECIES_ADDRESS</code>.</div>`;
+      : `<div class="banner"><b>Demo mode.</b> View Vault 42 prophecies — image and description, no wallet needed. Mint and publish go live after contracts deploy.</div>`;
+    let cardsHtml = '';
+    try {
+      const list = cfg.live
+        ? ((await loadChainProphecies(cfg)) || [])
+        : await listLocalProphecies();
+      if (!list.length) {
+        cardsHtml = '<div class="empty">No prophecies yet.</div>';
+      } else {
+        cardsHtml = list
+          .map(
+            (p) => `<a class="card" href="/prophecy/${p.id}">
+      <img class="shot" src="${escapeHtml(p.imageUri)}" alt="Prophecy ${p.id}"/>
+      <div class="body">
+        <div class="desc">${escapeHtml(p.description)}</div>
+        <div class="meta"><span>#${p.id} · Prophecy ${p.id}</span><span>${cfg.live ? p.nextPriceWholeGear + ' GEAR next' : 'View'}</span></div>
+      </div>
+    </a>`,
+          )
+          .join('');
+      }
+    } catch (e) {
+      // Fallback to seed so the first prophecy always shows
+      const list = SEED_PROPHECIES.map(withNextPrice);
+      cardsHtml = list
+        .map(
+          (p) => `<a class="card" href="/prophecy/${p.id}">
+      <img class="shot" src="${escapeHtml(p.imageUri)}" alt="Prophecy ${p.id}"/>
+      <div class="body">
+        <div class="desc">${escapeHtml(p.description)}</div>
+        <div class="meta"><span>#${p.id} · Prophecy ${p.id}</span><span>View</span></div>
+      </div>
+    </a>`,
+        )
+        .join('');
+      void e;
+    }
     const body = `${liveNote}
 <section>
   <div class="row" style="justify-content:space-between;margin-bottom:12px">
     <h1 style="margin:0;font-size:22px">Prophecy gallery</h1>
-    <button type="button" id="connectBtn" class="primary">Connect wallet</button>
   </div>
-  <div id="gallery" class="grid"><div class="empty">Loading…</div></div>
+  <div id="gallery" class="grid">${cardsHtml}</div>
 </section>`;
     return c.html(page('Gallery', body, 'gallery'));
   });
 
   app.get('/publish', (c) => {
+    if (!cfg.live) {
+      const body = `
+<div class="banner"><b>Publish coming soon.</b> Demo mode is view-only. After CapsMindKey and CapsMindProphecies deploy, Cap publishes with an eligible key NFT.</div>
+<p><a href="/">← Gallery</a></p>`;
+      return c.html(page('Publish', body, 'publish'));
+    }
     const body = `
 <div class="banner"><b>Publisher gate.</b> Connect a wallet that holds an <b>eligible</b> CAPs Mind Key NFT. Upload image + description, publish, then disconnect. A Caps Mind holder who also holds 2,000,000 GEAR can lock any key ID or pause all publishing.</div>
 <p id="publishPauseNote" class="meta" style="margin:0 0 12px"></p>
@@ -214,30 +256,44 @@ export function createApp(cfg: SiteConfig = configFromEnv()) {
 
   app.get('/prophecy/:id', async (c) => {
     const id = c.req.param('id');
-    const body = `
-<div class="banner" id="modeBanner"></div>
-<section style="display:grid;grid-template-columns:1.1fr .9fr;gap:16px">
-  <div class="tablet-frame">
-    <img id="propImage" alt="Prophecy tablet" src=""/>
-    <div class="tablet-text" id="propText">Loading…</div>
-  </div>
-  <div class="panel">
-    <h1 style="margin:0 0 8px;font-size:20px">Prophecy #${escapeHtml(id)}</h1>
-    <div class="kv"><span>Editions minted</span><span id="propMinted">-</span></div>
-    <div class="kv"><span>Next price</span><span id="propPrice">-</span></div>
-    <div class="kv"><span>Publisher</span><span id="propPublisher" style="font-family:ui-monospace,monospace;font-size:12px">-</span></div>
-    <div class="kv"><span>Published</span><span id="propWhen">-</span></div>
-    <div class="row">
+    const num = Number(id) || 0;
+    let p =
+      (cfg.live ? await loadChainProphecy(cfg, num).catch(() => null) : null) ||
+      (await getLocalProphecy(num)) ||
+      SEED_PROPHECIES.map(withNextPrice).find((x) => x.id === num) ||
+      null;
+    const imgSrc = p ? escapeHtml(p.imageUri) : '';
+    const desc = p ? escapeHtml(p.description) : 'Not found';
+    const banner = cfg.live
+      ? `<div class="banner" id="modeBanner"><b>Onchain mint.</b> Approve GEAR, then mint. Curve caps at ${cfg.maxPriceGear} GEAR.</div>`
+      : `<div class="banner" id="modeBanner"><b>Demo view.</b> Read the prophecy. Minting opens when contracts deploy.</div>`;
+    const mintRow = cfg.live
+      ? `<div class="row">
       <button type="button" id="connectBtn" class="primary">Connect wallet</button>
       <button type="button" id="mintBtn" class="primary" disabled>Mint edition</button>
     </div>
     <p class="meta" id="mintStatus" style="margin-top:10px"></p>
-    <p class="meta">Curve: mint n costs min(1000, 2^(n-1)) GEAR. Payment splits 90% treasury / 10% GearVault.</p>
+    <p class="meta">Curve: mint n costs min(1000, 2^(n-1)) GEAR. Payment splits 90% treasury / 10% GearVault.</p>`
+      : `<p class="meta" id="mintStatus" style="margin-top:10px">Minting is stubbed until CapsMindProphecies is live onchain.</p>`;
+    const body = `
+${banner}
+<section style="display:grid;grid-template-columns:1.1fr .9fr;gap:16px">
+  <div class="tablet-frame">
+    <img id="propImage" alt="Prophecy tablet" src="${imgSrc}"/>
+    <div class="tablet-text" id="propText">${desc}</div>
+  </div>
+  <div class="panel">
+    <h1 style="margin:0 0 8px;font-size:20px">Prophecy #${escapeHtml(id)}</h1>
+    <div class="kv"><span>Editions minted</span><span id="propMinted">${p ? p.minted : '-'}</span></div>
+    <div class="kv"><span>Next price</span><span id="propPrice">${p ? p.nextPriceWholeGear + ' GEAR' : '-'}</span></div>
+    <div class="kv"><span>Publisher</span><span id="propPublisher" style="font-family:ui-monospace,monospace;font-size:12px">${p ? escapeHtml(p.publisher) : '-'}</span></div>
+    <div class="kv"><span>Published</span><span id="propWhen">${p && p.publishedAt ? new Date(p.publishedAt * 1000).toISOString().slice(0, 10) : '-'}</span></div>
+    ${mintRow}
     <p><a href="/">← Gallery</a></p>
   </div>
 </section>
 <style>@media (max-width:800px){ section{grid-template-columns:1fr !important} }</style>
-<script>window.__PROPHECY_ID__=${Number(id) || 0};</script>`;
+<script>window.__PROPHECY_ID__=${num};</script>`;
     return c.html(page(`Prophecy #${id}`, body, 'detail'));
   });
 
