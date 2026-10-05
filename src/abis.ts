@@ -1,0 +1,152 @@
+/** Minimal ABIs for CapsMindKey + CapsMindProphecies + ERC20 GEAR. */
+
+export const keyAbi = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'ownerOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'mint',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'to', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;
+
+export const propheciesAbi = [
+  {
+    type: 'function',
+    name: 'prophecyCount',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'getProphecy',
+    stateMutability: 'view',
+    inputs: [{ name: 'prophecyId', type: 'uint256' }],
+    outputs: [
+      { name: 'imageUri', type: 'string' },
+      { name: 'description', type: 'string' },
+      { name: 'minted', type: 'uint256' },
+      { name: 'publisher', type: 'address' },
+      { name: 'publishedAt', type: 'uint64' },
+      { name: 'nextPriceWholeGear', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'nextPrice',
+    stateMutability: 'view',
+    inputs: [{ name: 'prophecyId', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'nextPriceWhole',
+    stateMutability: 'view',
+    inputs: [{ name: 'prophecyId', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'priceForMintNumber',
+    stateMutability: 'pure',
+    inputs: [{ name: 'n', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'canPublish',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'publish',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'imageUri', type: 'string' },
+      { name: 'description', type: 'string' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'mint',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'prophecyId', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'publisherNft',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'publisherTokenId',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'gear',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+] as const;
+
+export const erc20Abi = [
+  {
+    type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint8' }],
+  },
+  {
+    type: 'function',
+    name: 'approve',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;

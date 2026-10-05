@@ -1,0 +1,31 @@
+{
+  "name": "caps-mind-prophecies",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CAPs Mind Prophecies: Vault 42 tablets. Publisher key NFT gate. GEAR bonding mint.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc -p web",
+    "serve": "tsx scripts/serve.ts",
+    "build:web": "tsx scripts/build-web.ts",
+    "test:contracts": "cd contracts && forge test",
+    "build": "npm run build:web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.3",
+    "@vercel/blob": "^2.8.0",
+    "hono": "^4.13.13",
+    "viem": "^2.57.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
