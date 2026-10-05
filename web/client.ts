@@ -7,7 +7,7 @@ import {
   type Address,
 } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
-import { erc20Abi, propheciesAbi } from '../src/abis.js';
+import { erc20Abi, keyAbi, propheciesAbi } from '../src/abis.js';
 
 type SiteConfig = {
   chainId: number;
@@ -28,6 +28,7 @@ type Prophecy = {
   publisher: string;
   publishedAt: number;
   nextPriceWholeGear: number;
+  keyId?: number;
 };
 
 declare global {
@@ -42,6 +43,7 @@ declare global {
 
 let cfg: SiteConfig;
 let account: Address | null = null;
+let publishKeyId: number | null = null;
 
 function chain() {
   return cfg.chainId === 8453 ? base : baseSepolia;
@@ -90,6 +92,16 @@ async function connect(): Promise<Address | null> {
   return account;
 }
 
+function disconnect() {
+  account = null;
+  publishKeyId = null;
+  setChip('Wallet disconnected');
+  void refreshPublishGate();
+  void refreshDetail();
+  const mintBtn = document.getElementById('mintBtn') as HTMLButtonElement | null;
+  if (mintBtn) mintBtn.disabled = true;
+}
+
 async function walletClient() {
   if (!window.ethereum || !account) throw new Error('Connect wallet first');
   return createWalletClient({
@@ -99,15 +111,88 @@ async function walletClient() {
   });
 }
 
-async function canPublish(addr: Address): Promise<boolean> {
-  if (!cfg.live) return true; // local demo: anyone can publish to JSON store
+/** Find first Caps Mind key the account owns that is eligible to publish. */
+async function findEligibleKey(addr: Address): Promise<{
+  ok: boolean;
+  keyId: number | null;
+  publishingPaused: boolean;
+  reason: string;
+}> {
+  if (!cfg.live) {
+    return { ok: true, keyId: 1, publishingPaused: false, reason: 'Local demo: anyone can publish.' };
+  }
   const client = publicClient();
-  return client.readContract({
-    address: cfg.propheciesAddress as Address,
+  const props = cfg.propheciesAddress as Address;
+  const keyAddr = cfg.keyAddress as Address;
+
+  const publishingPaused = await client.readContract({
+    address: props,
     abi: propheciesAbi,
-    functionName: 'canPublish',
+    functionName: 'publishingPaused',
+  });
+  if (publishingPaused) {
+    return {
+      ok: false,
+      keyId: null,
+      publishingPaused: true,
+      reason: 'Publishing is paused for all Caps Mind keys.',
+    };
+  }
+
+  const supply = await client.readContract({
+    address: keyAddr,
+    abi: keyAbi,
+    functionName: 'totalSupply',
+  });
+  const n = Number(supply);
+  for (let id = 1; id <= n; id++) {
+    try {
+      const owner = await client.readContract({
+        address: keyAddr,
+        abi: keyAbi,
+        functionName: 'ownerOf',
+        args: [BigInt(id)],
+      });
+      if (owner.toLowerCase() !== addr.toLowerCase()) continue;
+      const eligible = await client.readContract({
+        address: props,
+        abi: propheciesAbi,
+        functionName: 'canPublishWithKey',
+        args: [addr, BigInt(id)],
+      });
+      if (eligible) {
+        return {
+          ok: true,
+          keyId: id,
+          publishingPaused: false,
+          reason: `Eligible Caps Mind key #${id}`,
+        };
+      }
+    } catch {
+      /* skip missing ids */
+    }
+  }
+
+  const bal = await client.readContract({
+    address: keyAddr,
+    abi: keyAbi,
+    functionName: 'balanceOf',
     args: [addr],
   });
+  if (bal === 0n) {
+    return {
+      ok: false,
+      keyId: null,
+      publishingPaused: false,
+      reason: 'This wallet does not hold a CAPs Mind Key NFT.',
+    };
+  }
+  return {
+    ok: false,
+    keyId: null,
+    publishingPaused: false,
+    reason: 'Your Caps Mind key(s) are locked out of publishing.',
+  };
 }
 
 async function refreshGallery() {
@@ -179,17 +264,26 @@ function setText(id: string, value: string) {
 async function refreshPublishGate() {
   const gate = document.getElementById('publishGate');
   const btn = document.getElementById('publishBtn') as HTMLButtonElement | null;
+  const pauseNote = document.getElementById('publishPauseNote');
   if (!gate) return;
   if (!account) {
-    gate.textContent = 'Connect the key wallet to publish.';
+    publishKeyId = null;
+    gate.textContent = 'Connect a wallet that holds an eligible CAPs Mind Key to publish.';
     if (btn) btn.disabled = true;
+    if (pauseNote) pauseNote.textContent = '';
     return;
   }
-  const ok = await canPublish(account);
-  gate.innerHTML = ok
-    ? `<span class="ok">Publisher key OK (${short(account)})</span>`
-    : `<span class="bad">This wallet does not hold the CAPs Mind Key NFT.</span>`;
-  if (btn) btn.disabled = !ok;
+  const result = await findEligibleKey(account);
+  publishKeyId = result.keyId;
+  if (pauseNote) {
+    pauseNote.innerHTML = result.publishingPaused
+      ? '<span class="bad">Publishing is paused. A Caps Mind holder with 2,000,000 GEAR can unpause.</span>'
+      : '';
+  }
+  gate.innerHTML = result.ok
+    ? `<span class="ok">${escapeHtml(result.reason)} (${short(account)})</span>`
+    : `<span class="bad">${escapeHtml(result.reason)}</span>`;
+  if (btn) btn.disabled = !result.ok;
 }
 
 async function onPublish() {
@@ -218,7 +312,13 @@ async function onPublish() {
       return;
     }
     if (status) status.textContent = `Published local prophecy #${data.prophecy.id}`;
+    disconnect();
     location.href = `/prophecy/${data.prophecy.id}`;
+    return;
+  }
+
+  if (!publishKeyId) {
+    if (status) status.textContent = 'No eligible Caps Mind key on this wallet.';
     return;
   }
 
@@ -227,13 +327,14 @@ async function onPublish() {
     address: cfg.propheciesAddress as Address,
     abi: propheciesAbi,
     functionName: 'publish',
-    args: [imageUri, description],
+    args: [BigInt(publishKeyId), imageUri, description],
     chain: chain(),
     account,
   });
   if (status) status.textContent = `Tx ${hash.slice(0, 10)}… waiting`;
   await publicClient().waitForTransactionReceipt({ hash });
-  if (status) status.textContent = 'Published onchain.';
+  if (status) status.textContent = 'Published onchain. Disconnecting…';
+  disconnect();
   location.href = '/';
 }
 
@@ -337,6 +438,7 @@ async function boot() {
     const mintBtn = document.getElementById('mintBtn') as HTMLButtonElement | null;
     if (mintBtn) mintBtn.disabled = !account;
   });
+  document.getElementById('disconnectBtn')?.addEventListener('click', () => disconnect());
   document.getElementById('publishBtn')?.addEventListener('click', () => void onPublish());
   document.getElementById('mintBtn')?.addEventListener('click', () => void onMint());
   document.getElementById('imageFile')?.addEventListener('change', (e) => {
@@ -364,4 +466,3 @@ async function boot() {
 }
 
 void boot();
-

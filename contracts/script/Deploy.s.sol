@@ -16,7 +16,6 @@ import {CapsMindProphecies} from "../src/CapsMindProphecies.sol";
 ///   KEY_BASE_URI        metadata base for CapsMindKey (optional, default empty)
 ///   PROP_BASE_URI       metadata base for prophecy edition NFTs
 ///   MINT_KEY_TO         address that receives CapsMindKey #1 (usually Cap)
-///   PUBLISHER_TOKEN_ID  0 = any key in collection; else require that token id
 contract Deploy is Script {
     function run() external {
         address owner = vm.envAddress("OWNER_ADDRESS");
@@ -24,28 +23,27 @@ contract Deploy is Script {
         address gearVault = vm.envAddress("GEAR_VAULT_ADDRESS");
         address gearToken = vm.envAddress("GEAR_TOKEN");
         address mintKeyTo = vm.envAddress("MINT_KEY_TO");
-        uint256 publisherTokenId = vm.envOr("PUBLISHER_TOKEN_ID", uint256(0));
         string memory keyBaseUri = vm.envOr("KEY_BASE_URI", string(""));
         string memory propBaseUri = vm.envOr("PROP_BASE_URI", string(""));
 
         vm.startBroadcast();
 
-        CapsMindKey key = new CapsMindKey(owner, keyBaseUri);
-        // Deployer is not owner; owner must mint. If deployer == owner, mint now.
+        CapsMindKey key = new CapsMindKey(owner, gearToken, keyBaseUri);
+        // Bootstrap key #1: only owner can mint when totalSupply == 0 (no GEAR hold).
         if (msg.sender == owner) {
             key.mint(mintKeyTo);
         }
 
         CapsMindProphecies props = new CapsMindProphecies(
-            owner, gearToken, treasury, gearVault, address(key), publisherTokenId, propBaseUri
+            owner, gearToken, treasury, gearVault, address(key), propBaseUri
         );
 
         vm.stopBroadcast();
 
         console2.log("CapsMindKey", address(key));
         console2.log("CapsMindProphecies", address(props));
-        console2.log("publisherTokenId", publisherTokenId);
         console2.log("owner", owner);
-        console2.log("Note: if deployer != owner, owner must call CapsMindKey.mint(MINT_KEY_TO)");
+        console2.log("mintKeyTo", mintKeyTo);
+        console2.log("Note: if deployer != owner, owner must call CapsMindKey.mint(MINT_KEY_TO) to bootstrap #1");
     }
 }

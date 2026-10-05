@@ -2,10 +2,20 @@
 pragma solidity ^0.8.24;
 
 /// @title CapsMindKey
-/// @notice Simple ERC-721 key Cap mints to himself (or a Safe). Holding any token from
-///         this collection unlocks the publisher role on CapsMindProphecies. Cap can
-///         instead point CapsMindProphecies at a different NFT collection + optional
-///         specific token id.
+/// @notice ERC-721 CAPs Mind publisher keys with sequential token IDs (1, 2, 3…).
+///         Bootstrap: when totalSupply == 0, owner may mint key #1 with no GEAR hold.
+///         After that, anyone who HOLDS at least 2_000_000 GEAR (balance check only;
+///         no burn/transfer) may mint a new key. Cap keeps control of GEAR supply so
+///         lost/sold keys do not strand the app — a new key can be minted by a 2M holder.
+///
+///         GEAR Base mainnet: 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
+///         Pass a mock/test GEAR address for Sepolia.
+
+interface IERC20Balance {
+    function balanceOf(address account) external view returns (uint256);
+    function decimals() external view returns (uint8);
+}
+
 contract CapsMindKey {
     error NotOwner();
     error NotPendingOwner();
@@ -15,32 +25,51 @@ contract CapsMindKey {
     error BadToken();
     error TransferToZero();
     error EthRejected();
+    error PausedError();
+    error InsufficientGearHold();
+    error BootstrapOnlyOwner();
+    error BootstrapAlreadyDone();
 
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed spender, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
     event OwnershipTransferStarted(address indexed owner, address indexed pendingOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event KeyMinted(address indexed to, uint256 indexed tokenId);
+    event KeyMinted(address indexed to, uint256 indexed tokenId, address indexed minter);
+    event BaseURISet(string baseURI);
+    event Paused(address indexed by);
+    event Unpaused(address indexed by);
 
     string public constant NAME = "CAPs Mind Key";
     string public constant SYMBOL = "CAPSKEY";
+    /// @dev Whole GEAR that must be held (not spent) to mint a key after bootstrap.
+    uint256 public constant KEY_HOLD_GEAR = 2_000_000;
+
+    IERC20Balance public immutable gear;
+    uint256 public immutable gearUnit; // 10^decimals
+    uint256 public immutable keyHoldAmount; // KEY_HOLD_GEAR * gearUnit
 
     address public owner;
     address public pendingOwner;
     uint256 public totalSupply;
     string public baseURI;
+    bool public paused;
 
     mapping(uint256 => address) private _ownerOf;
     mapping(address => uint256) private _balanceOf;
     mapping(uint256 => address) private _tokenApproval;
     mapping(address => mapping(address => bool)) private _operatorApproval;
 
-    constructor(address initialOwner, string memory baseURI_) {
-        if (initialOwner == address(0)) revert ZeroAddress();
+    constructor(address initialOwner, address gearToken, string memory baseURI_) {
+        if (initialOwner == address(0) || gearToken == address(0)) revert ZeroAddress();
         owner = initialOwner;
+        gear = IERC20Balance(gearToken);
+        uint8 d = IERC20Balance(gearToken).decimals();
+        gearUnit = 10 ** uint256(d);
+        keyHoldAmount = KEY_HOLD_GEAR * gearUnit;
         baseURI = baseURI_;
         emit OwnershipTransferred(address(0), initialOwner);
+        emit BaseURISet(baseURI_);
     }
 
     modifier onlyOwner() {
@@ -48,17 +77,47 @@ contract CapsMindKey {
         _;
     }
 
-    /// @notice Owner mints one key NFT to `to`. Cap typically mints token 1 to himself.
-    function mint(address to) external onlyOwner returns (uint256 tokenId) {
+    modifier whenNotPaused() {
+        if (paused) revert PausedError();
+        _;
+    }
+
+    /// @notice Mint a Caps Mind key.
+    ///         - If totalSupply == 0: only owner may mint (bootstrap key #1, no GEAR hold).
+    ///         - Otherwise: msg.sender must HOLD >= 2_000_000 GEAR (balanceOf check only).
+    function mint(address to) external whenNotPaused returns (uint256 tokenId) {
         if (to == address(0)) revert ZeroAddress();
+        if (totalSupply == 0) {
+            if (msg.sender != owner) revert BootstrapOnlyOwner();
+        } else {
+            if (gear.balanceOf(msg.sender) < keyHoldAmount) revert InsufficientGearHold();
+        }
         tokenId = totalSupply + 1;
         totalSupply = tokenId;
         _mint(to, tokenId);
-        emit KeyMinted(to, tokenId);
+        emit KeyMinted(to, tokenId, msg.sender);
+    }
+
+    /// @notice True if `account` currently holds enough GEAR to mint a new key (post-bootstrap).
+    function canMintKey(address account) public view returns (bool) {
+        if (account == address(0) || paused) return false;
+        if (totalSupply == 0) return account == owner;
+        return gear.balanceOf(account) >= keyHoldAmount;
     }
 
     function setBaseURI(string calldata uri) external onlyOwner {
         baseURI = uri;
+        emit BaseURISet(uri);
+    }
+
+    function pause() external onlyOwner {
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    function unpause() external onlyOwner {
+        paused = false;
+        emit Unpaused(msg.sender);
     }
 
     function transferOwnership(address newOwner) external onlyOwner {

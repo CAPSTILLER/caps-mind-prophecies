@@ -1,6 +1,6 @@
 # CAPs Mind Prophecies
 
-Vault 42 prophecy tablets. Cap publishes with a **CAPs Mind Key** NFT. Anyone mints editions by paying **GEAR** on a bonding curve.
+Vault 42 prophecy tablets. Cap publishes with an **eligible CAPs Mind Key** NFT. Anyone mints editions by paying **GEAR** on a bonding curve.
 
 Live product pieces:
 
@@ -8,15 +8,31 @@ Live product pieces:
 - Site (Hono + static): gallery, prophecy detail/mint, publisher upload
 - GEAR Base mainnet: `0x5880cD05605A549f1DAb01a53ca61Ee559244bD1` (6 decimals)
 
-## Publisher gate
+## CapsMindKey (ERC-721, sequential IDs)
 
-1. Deploy `CapsMindKey` and mint token #1 to Cap (or Cap's Safe).
-2. Deploy `CapsMindProphecies` with `publisherNft = CapsMindKey` and `publisherTokenId = 0` (any key) or a specific token id.
-3. Cap connects that wallet on `/publish`, uploads image + description, calls `publish`, then disconnects.
+One contract; token IDs mint 1, 2, 3…
 
-Only wallets that pass `canPublish(account)` can publish. Viewing and minting are public.
+| Who | Rule |
+| --- | --- |
+| **Bootstrap #1** | When `totalSupply == 0`, **only owner** may call `mint(to)` — **no GEAR hold**. This is how Cap gets key #1. |
+| **Later keys** | Anyone who **holds** ≥ **2,000,000 GEAR** (`balanceOf` check only; no burn/transfer) may `mint(to)`. |
 
-## Bonding price
+Owner can `setBaseURI` / `pause` key minting. Cap keeps control of GEAR supply so a lost/sold key does not strand the app — a 2M GEAR holder can mint a new Caps Mind key.
+
+## CapsMindProphecies (edition NFTs)
+
+### Publishing
+
+- Caller calls `publish(keyId, imageUri, description)`.
+- Must **own** that Caps Mind `keyId`, and that ID must be **eligible**.
+- **Default:** every Caps Mind token ID is eligible unless locked.
+- Any Caps Mind holder who also holds ≥ **2,000,000 GEAR** can:
+  - `setPublishEligible(keyId, bool)` — lock or unlock **any** Caps Mind ID (including others')
+  - `pausePublishing(bool)` — pause **all** new uploads without changing per-id flags
+
+So if an old key is sold/lost, Cap (or any Caps Mind + 2M GEAR holder) can lock that ID out, or pause publishing entirely.
+
+### Minting (anyone)
 
 For mint number `n` of a given prophecy (starting at 1):
 
@@ -32,7 +48,7 @@ npm run build:web
 npm run serve
 ```
 
-Open http://127.0.0.1:8787. Without `KEY_ADDRESS` / `PROPHECIES_ADDRESS`, the site uses a local JSON store under `data/` so Cap can try the UI. Image uploads go to `public/uploads/` (or Vercel Blob if `BLOB_READ_WRITE_TOKEN` is set).
+Open http://127.0.0.1:8787. Without `KEY_ADDRESS` / `PROPHECIES_ADDRESS`, the site uses a local JSON store under `data/`. Image uploads go to `public/uploads/` (or Vercel Blob if `BLOB_READ_WRITE_TOKEN` is set).
 
 ## Onchain mode
 

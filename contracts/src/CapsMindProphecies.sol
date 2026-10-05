@@ -2,28 +2,30 @@
 pragma solidity ^0.8.24;
 
 /// @title CapsMindProphecies
-/// @notice Vault 42 prophecy tablets. Cap (or any wallet holding the configured publisher
-///         NFT) publishes image URI + description. Anyone mints editions by paying GEAR
-///         on a per-prophecy bonding curve: mint n costs min(1000, 2^(n-1)) whole GEAR,
-///         then stays at 1000 forever. Payment splits 90% treasury / 10% GearVault.
+/// @notice Vault 42 prophecy tablets. A CapsMindKey holder whose key ID is eligible
+///         publishes image URI + description. Anyone mints editions by paying GEAR on a
+///         per-prophecy bonding curve: mint n costs min(1000, 2^(n-1)) whole GEAR, then
+///         stays at 1000 forever. Payment splits 90% treasury / 10% GearVault.
 ///
-///         Publisher gate
-///           - publisherNft: ERC-721 collection address (CapsMindKey or any other).
-///           - publisherTokenId: 0 means any token in that collection (balanceOf > 0).
-///             Non-zero means the caller must own that exact token id.
-///           Owner can retarget the gate after deploy.
+///         Publish eligibility
+///           - By default every Caps Mind token ID is eligible unless locked.
+///           - Any CapsMindKey holder who ALSO holds >= 2_000_000 GEAR may call
+///             setPublishEligible(keyId, bool) for ANY key ID (including others').
+///           - The same gate may call pausePublishing(bool) to stop ALL new uploads
+///             without changing per-id flags (Cap: "lock every caps mind out").
 ///
 ///         GEAR (Base mainnet): 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
-///         Mint price is scaled by gear.decimals() read at deploy.
 
 interface IERC20Pay {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
     function decimals() external view returns (uint8);
 }
 
-interface IERC721Balance {
+interface ICapsMindKey {
     function balanceOf(address owner) external view returns (uint256);
     function ownerOf(uint256 tokenId) external view returns (address);
+    function totalSupply() external view returns (uint256);
 }
 
 contract CapsMindProphecies {
@@ -34,9 +36,13 @@ contract CapsMindProphecies {
     error NotOwner();
     error NotPendingOwner();
     error NotPublisher();
+    error NotEligibilityAdmin();
+    error KeyNotEligible();
+    error PublishingPausedError();
     error ZeroAddress();
     error PausedError();
     error BadProphecy();
+    error BadKey();
     error EmptyImage();
     error EmptyDescription();
     error DescriptionTooLong();
@@ -53,7 +59,11 @@ contract CapsMindProphecies {
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
 
     event ProphecyPublished(
-        uint256 indexed prophecyId, address indexed publisher, string imageUri, string description
+        uint256 indexed prophecyId,
+        uint256 indexed keyId,
+        address indexed publisher,
+        string imageUri,
+        string description
     );
     event ProphecyMinted(
         uint256 indexed prophecyId,
@@ -62,7 +72,9 @@ contract CapsMindProphecies {
         uint256 mintNumber,
         uint256 pricePaid
     );
-    event PublisherGateSet(address indexed nft, uint256 tokenId);
+    event CapsMindKeySet(address indexed capsMindKey);
+    event PublishEligibleSet(uint256 indexed keyId, bool eligible, address indexed by);
+    event PublishingPausedSet(bool paused, address indexed by);
     event TreasurySet(address indexed treasury);
     event GearVaultSet(address indexed gearVault);
     event BaseURISet(string baseURI);
@@ -84,6 +96,8 @@ contract CapsMindProphecies {
     uint256 public constant PRICE_CAP_MINT_NUMBER = 11;
     uint256 public constant MAX_DESCRIPTION_BYTES = 2048;
     uint256 public constant MAX_IMAGE_URI_BYTES = 1024;
+    /// @dev Whole GEAR hold required (with a Caps Mind key) to change eligibility / pause publishing.
+    uint256 public constant KEY_HOLD_GEAR = 2_000_000;
 
     string public constant NAME = "CAPs Mind Prophecy";
     string public constant SYMBOL = "CAPSPROP";
@@ -94,6 +108,7 @@ contract CapsMindProphecies {
 
     IERC20Pay public immutable gear;
     uint256 public immutable gearUnit; // 10^decimals
+    uint256 public immutable keyHoldAmount; // KEY_HOLD_GEAR * gearUnit
 
     address public owner;
     address public pendingOwner;
@@ -101,10 +116,12 @@ contract CapsMindProphecies {
     address public gearVault;
     bool public paused;
 
-    /// @notice Publisher NFT collection. Holding unlocks publish().
-    address public publisherNft;
-    /// @notice 0 = any token in publisherNft (balanceOf > 0). Else must own this token id.
-    uint256 public publisherTokenId;
+    /// @notice CapsMindKey ERC-721 collection.
+    address public capsMindKey;
+    /// @notice When true, no new prophecy uploads (minting editions still allowed unless `paused`).
+    bool public publishingPaused;
+    /// @notice keyId => locked out of publishing. Default false = eligible.
+    mapping(uint256 => bool) private _publishLocked;
 
     string public baseURI;
     uint256 public prophecyCount;
@@ -116,6 +133,7 @@ contract CapsMindProphecies {
         uint256 minted; // how many editions minted so far
         address publisher;
         uint64 publishedAt;
+        uint256 keyId; // Caps Mind key used to publish
     }
 
     mapping(uint256 => Prophecy) private _prophecies;
@@ -131,27 +149,26 @@ contract CapsMindProphecies {
         address gearToken,
         address treasury_,
         address gearVault_,
-        address publisherNft_,
-        uint256 publisherTokenId_,
+        address capsMindKey_,
         string memory baseURI_
     ) {
         if (
             initialOwner == address(0) || gearToken == address(0) || treasury_ == address(0)
-                || gearVault_ == address(0) || publisherNft_ == address(0)
+                || gearVault_ == address(0) || capsMindKey_ == address(0)
         ) revert ZeroAddress();
 
         owner = initialOwner;
         gear = IERC20Pay(gearToken);
         uint8 d = IERC20Pay(gearToken).decimals();
         gearUnit = 10 ** uint256(d);
+        keyHoldAmount = KEY_HOLD_GEAR * gearUnit;
         treasury = treasury_;
         gearVault = gearVault_;
-        publisherNft = publisherNft_;
-        publisherTokenId = publisherTokenId_;
+        capsMindKey = capsMindKey_;
         baseURI = baseURI_;
 
         emit OwnershipTransferred(address(0), initialOwner);
-        emit PublisherGateSet(publisherNft_, publisherTokenId_);
+        emit CapsMindKeySet(capsMindKey_);
         emit TreasurySet(treasury_);
         emit GearVaultSet(gearVault_);
         emit BaseURISet(baseURI_);
@@ -199,7 +216,8 @@ contract CapsMindProphecies {
             uint256 minted,
             address publisher,
             uint64 publishedAt,
-            uint256 nextPriceWholeGear
+            uint256 nextPriceWholeGear,
+            uint256 keyId
         )
     {
         Prophecy storage p = _prophecies[prophecyId];
@@ -210,36 +228,87 @@ contract CapsMindProphecies {
             p.minted,
             p.publisher,
             p.publishedAt,
-            priceForMintNumber(p.minted + 1)
+            priceForMintNumber(p.minted + 1),
+            p.keyId
         );
     }
 
-    /// @notice True if `account` may publish (holds the configured key NFT).
-    function canPublish(address account) public view returns (bool) {
-        if (account == address(0) || publisherNft == address(0)) return false;
-        IERC721Balance nft = IERC721Balance(publisherNft);
-        if (publisherTokenId == 0) {
-            return nft.balanceOf(account) > 0;
-        }
-        try nft.ownerOf(publisherTokenId) returns (address o) {
+    /// @notice True unless this Caps Mind key ID has been locked out of publishing.
+    function isPublishEligible(uint256 keyId) public view returns (bool) {
+        if (!_keyExists(keyId)) return false;
+        return !_publishLocked[keyId];
+    }
+
+    /// @notice True if `account` owns `keyId`, that key is eligible, and publishing is not paused.
+    function canPublishWithKey(address account, uint256 keyId) public view returns (bool) {
+        if (account == address(0) || publishingPaused || paused) return false;
+        if (!isPublishEligible(keyId)) return false;
+        try ICapsMindKey(capsMindKey).ownerOf(keyId) returns (address o) {
             return o == account;
         } catch {
             return false;
         }
     }
 
+    /// @notice True if `account` owns at least one eligible Caps Mind key and publishing is open.
+    function canPublish(address account) public view returns (bool) {
+        if (account == address(0) || publishingPaused || paused) return false;
+        ICapsMindKey key = ICapsMindKey(capsMindKey);
+        if (key.balanceOf(account) == 0) return false;
+        uint256 supply = key.totalSupply();
+        for (uint256 id = 1; id <= supply; id++) {
+            if (canPublishWithKey(account, id)) return true;
+        }
+        return false;
+    }
+
+    /// @notice True if account holds any Caps Mind key AND >= 2_000_000 GEAR.
+    function canManageEligibility(address account) public view returns (bool) {
+        if (account == address(0)) return false;
+        if (ICapsMindKey(capsMindKey).balanceOf(account) == 0) return false;
+        return gear.balanceOf(account) >= keyHoldAmount;
+    }
+
     // ---------------------------------------------------------------------
-    // publish (publisher key required)
+    // eligibility admin (Caps Mind holder + 2M GEAR)
     // ---------------------------------------------------------------------
 
-    /// @notice Publish a new prophecy. Caller must hold the publisher NFT gate.
-    ///         Only image URI + description. Cap uploads for now (no bot auto-publish).
-    function publish(string calldata imageUri, string calldata description)
+    /// @notice Lock or unlock publish rights for ANY Caps Mind key ID.
+    ///         Caller must own a Caps Mind key and hold >= 2_000_000 GEAR.
+    function setPublishEligible(uint256 keyId, bool eligible) external {
+        if (!canManageEligibility(msg.sender)) revert NotEligibilityAdmin();
+        if (!_keyExists(keyId)) revert BadKey();
+        _publishLocked[keyId] = !eligible;
+        emit PublishEligibleSet(keyId, eligible, msg.sender);
+    }
+
+    /// @notice Pause or unpause ALL new prophecy uploads (does not change per-id flags).
+    ///         Caller must own a Caps Mind key and hold >= 2_000_000 GEAR.
+    function pausePublishing(bool paused_) external {
+        if (!canManageEligibility(msg.sender)) revert NotEligibilityAdmin();
+        publishingPaused = paused_;
+        emit PublishingPausedSet(paused_, msg.sender);
+    }
+
+    // ---------------------------------------------------------------------
+    // publish (eligible Caps Mind key required)
+    // ---------------------------------------------------------------------
+
+    /// @notice Publish a new prophecy using Caps Mind key `keyId`.
+    ///         Caller must own that key, it must be eligible, and publishing must not be paused.
+    function publish(uint256 keyId, string calldata imageUri, string calldata description)
         external
         whenNotPaused
         returns (uint256 prophecyId)
     {
-        if (!canPublish(msg.sender)) revert NotPublisher();
+        if (publishingPaused) revert PublishingPausedError();
+        if (!canPublishWithKey(msg.sender, keyId)) {
+            if (!_keyExists(keyId) || ICapsMindKey(capsMindKey).ownerOf(keyId) != msg.sender) {
+                revert NotPublisher();
+            }
+            if (_publishLocked[keyId]) revert KeyNotEligible();
+            revert NotPublisher();
+        }
         if (bytes(imageUri).length == 0) revert EmptyImage();
         if (bytes(description).length == 0) revert EmptyDescription();
         if (bytes(imageUri).length > MAX_IMAGE_URI_BYTES) revert ImageTooLong();
@@ -252,9 +321,10 @@ contract CapsMindProphecies {
             description: description,
             minted: 0,
             publisher: msg.sender,
-            publishedAt: uint64(block.timestamp)
+            publishedAt: uint64(block.timestamp),
+            keyId: keyId
         });
-        emit ProphecyPublished(prophecyId, msg.sender, imageUri, description);
+        emit ProphecyPublished(prophecyId, keyId, msg.sender, imageUri, description);
     }
 
     // ---------------------------------------------------------------------
@@ -287,11 +357,10 @@ contract CapsMindProphecies {
     // owner admin
     // ---------------------------------------------------------------------
 
-    function setPublisherGate(address nft, uint256 tokenId) external onlyOwner {
-        if (nft == address(0)) revert ZeroAddress();
-        publisherNft = nft;
-        publisherTokenId = tokenId;
-        emit PublisherGateSet(nft, tokenId);
+    function setCapsMindKey(address capsMindKey_) external onlyOwner {
+        if (capsMindKey_ == address(0)) revert ZeroAddress();
+        capsMindKey = capsMindKey_;
+        emit CapsMindKeySet(capsMindKey_);
     }
 
     function setTreasury(address treasury_) external onlyOwner {
@@ -409,6 +478,15 @@ contract CapsMindProphecies {
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == 0x01ffc9a7 || interfaceId == 0x80ac58cd || interfaceId == 0x5b5e139f;
+    }
+
+    function _keyExists(uint256 keyId) internal view returns (bool) {
+        if (keyId == 0) return false;
+        try ICapsMindKey(capsMindKey).ownerOf(keyId) returns (address o) {
+            return o != address(0);
+        } catch {
+            return false;
+        }
     }
 
     function _mint(address to, uint256 tokenId) internal {

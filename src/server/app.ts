@@ -51,6 +51,7 @@ async function loadChainProphecies(cfg: SiteConfig) {
       publisher: row[3],
       publishedAt: Number(row[4]),
       nextPriceWholeGear: Number(row[5]),
+      keyId: Number(row[6]),
     });
   }
   return out;
@@ -73,6 +74,7 @@ async function loadChainProphecy(cfg: SiteConfig, id: number) {
     publisher: row[3],
     publishedAt: Number(row[4]),
     nextPriceWholeGear: Number(row[5]),
+    keyId: Number(row[6]),
   };
 }
 
@@ -187,10 +189,12 @@ export function createApp(cfg: SiteConfig = configFromEnv()) {
 
   app.get('/publish', (c) => {
     const body = `
-<div class="banner"><b>Publisher gate.</b> Connect a wallet that holds the CAPs Mind Key NFT (or the configured publisher token). Then upload image + description and publish. Log out when done.</div>
+<div class="banner"><b>Publisher gate.</b> Connect a wallet that holds an <b>eligible</b> CAPs Mind Key NFT. Upload image + description, publish, then disconnect. A Caps Mind holder who also holds 2,000,000 GEAR can lock any key ID or pause all publishing.</div>
+<p id="publishPauseNote" class="meta" style="margin:0 0 12px"></p>
 <section class="panel">
   <div class="row">
     <button type="button" id="connectBtn" class="primary">Connect wallet</button>
+    <button type="button" id="disconnectBtn">Disconnect</button>
     <span id="publishGate" class="meta">Checking key…</span>
   </div>
   <label for="imageUrl">Image URL</label>
