@@ -14,7 +14,8 @@ contract DeployKeyOnly is Script {
         address gearToken = vm.envAddress("GEAR_TOKEN");
         address mintKeyTo = vm.envOr("MINT_KEY_TO", CAP_WALLET);
         string memory keyBaseUri = vm.envOr("KEY_BASE_URI", string(""));
-        string memory keyImageUri = vm.envOr("KEY_IMAGE_URI", string(""));
+        string memory keyImageUri =
+            vm.envOr("KEY_IMAGE_URI", string("https://capsmind.gearup.wtf/key/caps-mind-key.jpg"));
         string memory keyAnimationUri = vm.envOr("KEY_ANIMATION_URI", string(""));
 
         vm.startBroadcast();
@@ -31,6 +32,6 @@ contract DeployKeyOnly is Script {
         console2.log("owner", owner);
         console2.log("mintKeyTo", mintKeyTo);
         console2.log("Note: if deployer != owner, owner must call CapsMindKey.mint(MINT_KEY_TO)");
-        console2.log("Media: owner can call setMediaURIs(image, animation) once video/poster are hosted");
+        console2.log("Media default image: https://capsmind.gearup.wtf/key/caps-mind-key.jpg (IPFS later for permanence)");
     }
 }

@@ -17,8 +17,9 @@ import {CapsMindProphecies} from "../src/CapsMindProphecies.sol";
 ///   GEAR_TOKEN          GEAR ERC-20 (mainnet: 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1;
 ///                       on Sepolia use a mock or Cap's test GEAR)
 ///   KEY_BASE_URI        leave empty for on-chain JSON; set to host off-chain metadata
-///   KEY_IMAGE_URI       optional poster/still (ipfs/https) — can also set post-deploy
-///   KEY_ANIMATION_URI   optional video URL for wallet/OpenSea main view
+///   KEY_IMAGE_URI       default: https://capsmind.gearup.wtf/key/caps-mind-key.jpg
+///                       (IPFS recommended later for permanence; can also setMediaURIs post-deploy)
+///   KEY_ANIMATION_URI   optional video URL; leave empty to omit animation_url from metadata
 ///   PROP_BASE_URI       metadata base for prophecy edition NFTs
 ///   MINT_KEY_TO         receives CapsMindKey #1 (default: same Cap wallet)
 contract Deploy is Script {
@@ -31,7 +32,8 @@ contract Deploy is Script {
         address gearToken = vm.envAddress("GEAR_TOKEN");
         address mintKeyTo = vm.envOr("MINT_KEY_TO", CAP_WALLET);
         string memory keyBaseUri = vm.envOr("KEY_BASE_URI", string(""));
-        string memory keyImageUri = vm.envOr("KEY_IMAGE_URI", string(""));
+        string memory keyImageUri =
+            vm.envOr("KEY_IMAGE_URI", string("https://capsmind.gearup.wtf/key/caps-mind-key.jpg"));
         string memory keyAnimationUri = vm.envOr("KEY_ANIMATION_URI", string(""));
         string memory propBaseUri = vm.envOr("PROP_BASE_URI", string(""));
 
@@ -60,6 +62,6 @@ contract Deploy is Script {
         console2.log("owner", owner);
         console2.log("mintKeyTo", mintKeyTo);
         console2.log("Note: if deployer != owner, owner must call CapsMindKey.mint(MINT_KEY_TO) to bootstrap #1");
-        console2.log("Media: owner can call setMediaURIs(image, animation) once video/poster are hosted");
+        console2.log("Media default image: https://capsmind.gearup.wtf/key/caps-mind-key.jpg (IPFS later for permanence)");
     }
 }

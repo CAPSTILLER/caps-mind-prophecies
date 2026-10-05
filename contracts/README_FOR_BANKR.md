@@ -15,7 +15,7 @@ Do **not** deploy to Base mainnet until Cap says so. The contracts reject plain 
 | --- | --- | --- | --- |
 | 1 | `initialOwner` | address | Cap's wallet `0x6C05149910C2dd102032E44b96DA36988950B257` (deploy default). Bootstraps key #1; can pause / set media URIs / baseURI. |
 | 2 | `gearToken` | address | GEAR ERC-20. Mainnet: `0x5880cD05605A549f1DAb01a53ca61Ee559244bD1` (6 decimals). On Sepolia use Cap's mock/test GEAR. |
-| 3 | `baseURI_` | string | Leave empty for **on-chain JSON** (`image` + `animation_url` via `setMediaURIs`). Non-empty = off-chain `baseURI + tokenId`. |
+| 3 | `baseURI_` | string | Leave empty for **on-chain JSON** (`image` via `setMediaURIs`; `animation_url` only if set). Non-empty = off-chain `baseURI + tokenId`. |
 
 **Bootstrap:** when `totalSupply == 0`, only `owner` may call `mint(MINT_KEY_TO)` — **no GEAR hold**. After that, anyone who **holds** ≥ 2,000,000 GEAR (balance check only) may mint additional keys.
 
@@ -58,8 +58,8 @@ export TREASURY_ADDRESS=0x...
 export GEAR_VAULT_ADDRESS=0x...
 export GEAR_TOKEN=0x...          # Sepolia mock or mainnet GEAR when Cap says
 export KEY_BASE_URI=             # empty → on-chain JSON metadata
-export KEY_IMAGE_URI=            # optional poster (or setMediaURIs post-deploy)
-export KEY_ANIMATION_URI=        # optional video for OpenSea/wallet main view
+export KEY_IMAGE_URI=https://capsmind.gearup.wtf/key/caps-mind-key.jpg  # default still; IPFS later for permanence
+export KEY_ANIMATION_URI=        # leave empty to omit animation_url (image is main view)
 export PROP_BASE_URI=
 export BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 
@@ -74,12 +74,14 @@ If the deployer is not `OWNER_ADDRESS`, after deploy Cap's owner wallet must cal
 
 Add `--verify` and `BASESCAN_API_KEY` to verify on BaseScan.
 
-## CapsMindKey video metadata
+## CapsMindKey image metadata
 
 Default path is **on-chain JSON**: `tokenURI` returns `data:application/json;base64,…` with
-`name`, `description`, `image` (poster), and `animation_url` (video). Owner sets media with
-`setMediaURIs(image, animation)` once files are hosted (IPFS/HTTPS). See
-`contracts/metadata/` for the template and hosting notes. Do not invent art — wait for Cap's video.
+`name`, `description`, and `image` (main wallet/OpenSea view). `animation_url` is included
+**only** when `animationURI` is non-empty. Cap's still is at `public/key/caps-mind-key.jpg`
+(default `KEY_IMAGE_URI=https://capsmind.gearup.wtf/key/caps-mind-key.jpg`). **IPFS is
+recommended later for permanence** — pin the same JPG and call `setMediaURIs`. See
+`contracts/metadata/` for the template.
 
 If `KEY_BASE_URI` / `setBaseURI` is set, off-chain `baseURI + tokenId` is used instead.
 

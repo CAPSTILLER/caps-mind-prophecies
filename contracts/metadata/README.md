@@ -1,4 +1,4 @@
-# CapsMindKey metadata (video NFT)
+# CapsMindKey metadata (image NFT)
 
 Wallets and OpenSea use ERC-721 `tokenURI` JSON.
 
@@ -11,8 +11,8 @@ Wallets and OpenSea use ERC-721 `tokenURI` JSON.
 | --- | --- |
 | `name` | `CAPs Mind Key #<id>` |
 | `description` | Fixed publisher-key blurb |
-| `image` | Owner-set `imageURI` (poster / still) |
-| `animation_url` | Owner-set `animationURI` (video — main view) |
+| `image` | Owner-set `imageURI` — **main wallet/OpenSea view** |
+| `animation_url` | Owner-set `animationURI` — **only included when non-empty** |
 
 Owner updates media anytime:
 
@@ -20,19 +20,19 @@ Owner updates media anytime:
 setMediaURIs(imageURI, animationURI)
 ```
 
+Leave `animationURI` empty so JSON has no `animation_url` field (wallets/OpenSea show the image).
+
 **Optional override:** if owner sets a non-empty `baseURI`, `tokenURI` becomes
 `baseURI + tokenId` and expects hosted JSON shaped like `caps-mind-key.template.json`.
 
-## When Cap sends the video
+## Cap's key art (current)
 
-1. Prefer **MP4 (H.264 + AAC)**, ~1080p or less, under ~50–100 MB for OpenSea/wallet friendliness.
-2. Export a **poster still** (PNG/JPG/WebP) from a clear frame — used as `image`.
-3. Host both on **IPFS** (nft.storage, Pinata, etc.) or a stable HTTPS CDN.
-4. Fill the TODOs below (or call `setMediaURIs` with the final URIs):
-   - `image` → poster URI (`ipfs://…` or `https://…`)
-   - `animation_url` → video URI
-5. Do **not** invent art — wait for Cap’s file. Leave placeholders until then.
-6. After deploy, Cap’s owner wallet (`0x6C05149910C2dd102032E44b96DA36988950B257`) calls
-   `setMediaURIs(poster, video)` (or sets `KEY_IMAGE_URI` / `KEY_ANIMATION_URI` at deploy time).
+- File in repo: `public/key/caps-mind-key.jpg` (exact original; no edits)
+- Default HTTPS URI: `https://capsmind.gearup.wtf/key/caps-mind-key.jpg`
+- Deploy default: `KEY_IMAGE_URI` falls back to that URL; `KEY_ANIMATION_URI` defaults empty
+
+**IPFS recommended later** for permanence (pin the same JPG to nft.storage / Pinata / etc., then
+call `setMediaURIs(ipfs://…, "")` from Cap's owner wallet). HTTPS on `capsmind.gearup.wtf` is fine
+for demo / first deploy.
 
 Template: [`caps-mind-key.template.json`](./caps-mind-key.template.json)

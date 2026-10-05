@@ -11,7 +11,7 @@ import {Base64} from "./Base64.sol";
 ///         lost/sold keys do not strand the app — a new key can be minted by a 2M holder.
 ///
 ///         Metadata: tokenURI returns on-chain JSON (data URI) with name, description,
-///         `image` (poster/still), and `animation_url` (video for wallet/OpenSea main view).
+///         and `image` (main wallet/OpenSea view). Optional `animation_url` only when set.
 ///         Owner sets media via setMediaURIs. Optional baseURI override for off-chain JSON.
 ///
 ///         GEAR Base mainnet: 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
@@ -63,11 +63,11 @@ contract CapsMindKey {
     address public pendingOwner;
     uint256 public totalSupply;
     /// @dev Optional off-chain metadata base. When non-empty, tokenURI = baseURI + tokenId
-    ///      (expects hosted JSON with image + animation_url). When empty, on-chain JSON is used.
+    ///      (expects hosted JSON with `image`; optional `animation_url`). When empty, on-chain JSON is used.
     string public baseURI;
-    /// @dev Poster / still image URI (OpenSea `image`). Shared by all key tokens until changed.
+    /// @dev Main image URI (OpenSea `image`) — primary wallet/OpenSea view. Shared by all keys.
     string public imageURI;
-    /// @dev Video URI for primary wallet/OpenSea view (OpenSea `animation_url`).
+    /// @dev Optional video URI (OpenSea `animation_url`). Omitted from on-chain JSON when empty.
     string public animationURI;
     bool public paused;
 
@@ -126,9 +126,9 @@ contract CapsMindKey {
         emit BaseURISet(uri);
     }
 
-    /// @notice Set collection media used in on-chain tokenURI JSON (poster + video).
-    /// @param image_ Poster/still URL (ipfs://… or https://…). Empty until Cap hosts art.
-    /// @param animation_ Video URL for wallet/OpenSea main view. Empty until Cap hosts video.
+    /// @notice Set collection media used in on-chain tokenURI JSON.
+    /// @param image_ Main image URL (ipfs://… or https://…). Shown as the NFT's main view.
+    /// @param animation_ Optional video URL. Leave empty to omit `animation_url` from JSON.
     function setMediaURIs(string calldata image_, string calldata animation_) external onlyOwner {
         imageURI = image_;
         animationURI = animation_;
@@ -179,7 +179,8 @@ contract CapsMindKey {
     }
 
     /// @notice ERC-721 metadata. If `baseURI` is set, returns `baseURI + tokenId` (off-chain JSON).
-    ///         Otherwise returns on-chain `data:application/json;base64,…` with image + animation_url.
+    ///         Otherwise returns on-chain `data:application/json;base64,…` with `image` (and
+    ///         `animation_url` only when `animationURI` is non-empty).
     function tokenURI(uint256 tokenId) external view returns (string memory) {
         if (_ownerOf[tokenId] == address(0)) revert BadToken();
         if (bytes(baseURI).length > 0) {
@@ -244,6 +245,10 @@ contract CapsMindKey {
 
     function _onchainTokenURI(uint256 tokenId) internal view returns (string memory) {
         string memory idStr = _toString(tokenId);
+        // Omit animation_url when empty so wallets/OpenSea show `image` as the main view.
+        string memory animPart = bytes(animationURI).length == 0
+            ? ""
+            : string(abi.encodePacked(',"animation_url":"', animationURI, '"'));
         string memory json = string(
             abi.encodePacked(
                 '{"name":"CAPs Mind Key #',
@@ -251,9 +256,9 @@ contract CapsMindKey {
                 '","description":"Publisher key for CAPs Mind Prophecies. An eligible key holder can upload new prophecies. Hold 2,000,000 GEAR to mint additional keys after bootstrap.",',
                 '"image":"',
                 imageURI,
-                '","animation_url":"',
-                animationURI,
-                '"}'
+                '"',
+                animPart,
+                "}"
             )
         );
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json))));

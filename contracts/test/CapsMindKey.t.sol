@@ -56,30 +56,51 @@ contract CapsMindKeyTest is Test {
         key.mint(CAP);
     }
 
-    function test_onchainTokenURIIncludesImageAndAnimation() public {
+    function test_onchainTokenURIOmitsEmptyAnimation() public {
         vm.prank(CAP);
         key.mint(CAP);
 
-        // Before media set: empty image / animation_url fields still valid JSON shape
+        // Before media set: image present (empty string), animation_url omitted entirely
         string memory uriEmpty = key.tokenURI(1);
         assertTrue(bytes(uriEmpty).length > 0);
         assertTrue(_startsWith(uriEmpty, "data:application/json;base64,"));
+        string memory jsonEmpty = string(_decodeDataUriJson(uriEmpty));
+        assertTrue(_contains(jsonEmpty, '"name":"CAPs Mind Key #1"'));
+        assertTrue(_contains(jsonEmpty, '"image":""'));
+        assertFalse(_contains(jsonEmpty, "animation_url"));
+
+        // Image-only media (Cap's still): still no animation_url
+        string memory still = "https://capsmind.gearup.wtf/key/caps-mind-key.jpg";
+        vm.prank(CAP);
+        key.setMediaURIs(still, "");
+        assertEq(key.imageURI(), still);
+        assertEq(key.animationURI(), "");
+
+        string memory uriStill = key.tokenURI(1);
+        string memory jsonStill = string(_decodeDataUriJson(uriStill));
+        assertTrue(_contains(jsonStill, string(abi.encodePacked('"image":"', still, '"'))));
+        assertFalse(_contains(jsonStill, "animation_url"));
+        assertTrue(_contains(jsonStill, "description"));
+    }
+
+    function test_onchainTokenURIIncludesAnimationWhenSet() public {
+        vm.prank(CAP);
+        key.mint(CAP);
 
         vm.prank(CAP);
         key.setMediaURIs(
-            "ipfs://TODO_POSTER_OR_STILL_URI",
-            "ipfs://TODO_VIDEO_URI"
+            "https://capsmind.gearup.wtf/key/caps-mind-key.jpg",
+            "ipfs://OPTIONAL_VIDEO_URI"
         );
-        assertEq(key.imageURI(), "ipfs://TODO_POSTER_OR_STILL_URI");
-        assertEq(key.animationURI(), "ipfs://TODO_VIDEO_URI");
+        assertEq(key.imageURI(), "https://capsmind.gearup.wtf/key/caps-mind-key.jpg");
+        assertEq(key.animationURI(), "ipfs://OPTIONAL_VIDEO_URI");
 
         string memory uri = key.tokenURI(1);
         assertTrue(_startsWith(uri, "data:application/json;base64,"));
-        // Decode base64 payload and check fields are present
         string memory json = string(_decodeDataUriJson(uri));
         assertTrue(_contains(json, '"name":"CAPs Mind Key #1"'));
-        assertTrue(_contains(json, '"image":"ipfs://TODO_POSTER_OR_STILL_URI"'));
-        assertTrue(_contains(json, '"animation_url":"ipfs://TODO_VIDEO_URI"'));
+        assertTrue(_contains(json, '"image":"https://capsmind.gearup.wtf/key/caps-mind-key.jpg"'));
+        assertTrue(_contains(json, '"animation_url":"ipfs://OPTIONAL_VIDEO_URI"'));
         assertTrue(_contains(json, "description"));
     }
 

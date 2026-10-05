@@ -17,7 +17,7 @@ One contract; token IDs mint 1, 2, 3…
 | **Bootstrap #1** | When `totalSupply == 0`, **only owner** may call `mint(to)` — **no GEAR hold**. This is how Cap gets key #1. |
 | **Later keys** | Anyone who **holds** ≥ **2,000,000 GEAR** (`balanceOf` check only; no burn/transfer) may `mint(to)`. |
 
-Owner can `setMediaURIs(image, animation)` (on-chain JSON with OpenSea `image` + `animation_url`), `setBaseURI` (optional off-chain override), and `pause` key minting. Default owner / key #1 mint-to: `0x6C05149910C2dd102032E44b96DA36988950B257`. Cap keeps control of GEAR supply so a lost/sold key does not strand the app — a 2M GEAR holder can mint a new Caps Mind key.
+Owner can `setMediaURIs(image, animation)` (on-chain JSON: OpenSea `image` is the main view; `animation_url` is omitted when empty), `setBaseURI` (optional off-chain override), and `pause` key minting. Default key image: `https://capsmind.gearup.wtf/key/caps-mind-key.jpg` (file at `public/key/caps-mind-key.jpg`; **IPFS recommended later for permanence**). Default owner / key #1 mint-to: `0x6C05149910C2dd102032E44b96DA36988950B257`. Cap keeps control of GEAR supply so a lost/sold key does not strand the app — a 2M GEAR holder can mint a new Caps Mind key.
 
 ## CapsMindProphecies (edition NFTs)
 
@@ -76,4 +76,4 @@ cd contracts && forge test
 3. GearVault address (10% GEAR)
 4. GEAR token on the target chain (Sepolia mock, or mainnet GEAR when Cap says)
 5. Wallet that should receive CapsMindKey #1 (`MINT_KEY_TO`, default: same Cap wallet)
-6. Optional metadata: leave `KEY_BASE_URI` empty for on-chain JSON; after video arrives, host MP4 + poster and call `setMediaURIs` (see `contracts/metadata/`)
+6. Optional metadata: leave `KEY_BASE_URI` empty for on-chain JSON. Default `KEY_IMAGE_URI` is `https://capsmind.gearup.wtf/key/caps-mind-key.jpg` (`public/key/caps-mind-key.jpg`). Leave `KEY_ANIMATION_URI` empty. Pin to IPFS later for permanence and call `setMediaURIs` (see `contracts/metadata/`).
