@@ -22,7 +22,7 @@ describe('app local mode', () => {
     expect(body.source).toBe('local');
     expect(body.prophecies).toHaveLength(1);
     expect(body.prophecies[0].id).toBe(1);
-    expect(body.prophecies[0].description).toContain('CAPs mind, it bends but never breaks');
+    expect(body.prophecies[0].description).toContain('CAPs mind, they float where the bamboo ends');
     expect(body.prophecies[0].imageUri).toBe('/prophecies/1.png');
     expect(body.prophecies[0].nextPriceWholeGear).toBe(1);
 
@@ -30,14 +30,14 @@ describe('app local mode', () => {
     expect(home.status).toBe(200);
     const html = await home.text();
     expect(html).toContain('/prophecies/1.png');
-    expect(html).toContain('CAPs mind, it bends but never breaks');
+    expect(html).toContain('CAPs mind, they float where the bamboo ends');
     expect(html).toContain('Demo mode');
 
     const detail = await app.request('http://x/prophecy/1');
     expect(detail.status).toBe(200);
     const dhtml = await detail.text();
     expect(dhtml).toContain('/prophecies/1.png');
-    expect(dhtml).toContain('shall never B blown');
+    expect(dhtml).toContain('based enough to call it home');
   });
 
   it('publishes additional local prophecies after seed', async () => {
