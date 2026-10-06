@@ -19414,13 +19414,13 @@ function createTransport({ key, methods, name, request, retryCount = 3, retryDel
 }
 
 // node_modules/viem/_esm/clients/transports/custom.js
-function custom(provider2, config = {}) {
+function custom(provider3, config = {}) {
   const { key = "custom", methods, name = "Custom Provider", retryDelay } = config;
   return ({ retryCount: defaultRetryCount }) => createTransport({
     key,
     methods,
     name,
-    request: provider2.request.bind(provider2),
+    request: provider3.request.bind(provider3),
     retryCount: config.retryCount ?? defaultRetryCount,
     retryDelay,
     type: "custom"
@@ -19659,7 +19659,6 @@ init_base();
 init_contract();
 init_rpc();
 init_getAddress();
-init_toHex();
 
 // node_modules/viem/_esm/op-stack/contracts.js
 var contracts = {
@@ -20103,8 +20102,8 @@ var TABLETS = {
   maxImageUriBytes: 1024,
   maxDescriptionBytes: 2048,
   siteOrigin: "https://capsmind.gearup.wtf",
-  /** Read RPCs with CORS, tried in order (browser and server). */
-  readRpcs: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"],
+  /** Public Base read RPCs with CORS, tried in order (browser and server). Each one rate limits on its own. */
+  readRpcs: ["https://mainnet.base.org", "https://base-rpc.publicnode.com", "https://base.drpc.org", "https://1rpc.io/base"],
   ipfsGateway: "https://ipfs.io/ipfs/"
 };
 var PREVIEW_PROPHECIES = [
@@ -20169,6 +20168,428 @@ var TABLET_ERROR_TEXT = {
   ERC20InsufficientAllowance: "The GEAR approval is too low. Approve again, then mint."
 };
 
+// src/mintFlow.ts
+var CONFIRM_POLL_MS = 2e3;
+var CONFIRM_MAX_POLLS = 60;
+var MintFlow = class {
+  constructor(tabletId, deps) {
+    this.tabletId = tabletId;
+    this.deps = deps;
+    this.view = { step: "connect", label: "Connect wallet to mint", disabled: false, message: null };
+  }
+  tabletId;
+  deps;
+  view;
+  quote = null;
+  allowance = 0n;
+  balance = 0n;
+  listeners = /* @__PURE__ */ new Set();
+  /** Called after a confirmed approve or mint, so other buttons can re-read. */
+  onSettled = null;
+  subscribe(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  show(step, label, disabled, message = void 0) {
+    this.view = { step, label, disabled, message: message === void 0 ? this.view.message : message };
+    for (const fn of this.listeners) fn(this.view);
+  }
+  busy() {
+    return this.view.step === "approving" || this.view.step === "minting" || this.view.step === "checking";
+  }
+  mintLabel() {
+    return `Mint copy #${this.quote.serial} for ${this.quote.whole} GEAR`;
+  }
+  /** Read price, allowance and balance, then show Approve or Mint. Never opens the wallet. */
+  async refresh(message = void 0, atBlock) {
+    if (this.view.step === "approving" || this.view.step === "minting") return;
+    const owner = this.deps.account();
+    if (!owner) {
+      this.quote = null;
+      return this.show("connect", "Connect wallet to mint", false, message === void 0 ? null : message);
+    }
+    this.show("checking", "Checking\u2026", true, message);
+    const attempts = atBlock === void 0 ? [void 0, void 0] : [atBlock, atBlock, atBlock, atBlock, void 0];
+    let lastErr = null;
+    let ok = false;
+    for (let i = 0; i < attempts.length && !ok; i++) {
+      if (i > 0) await this.deps.sleep(1500);
+      try {
+        const b = attempts[i];
+        const [quote, allowance, balance] = await Promise.all([
+          this.deps.readQuote(this.tabletId, b),
+          this.deps.readAllowance(owner, b),
+          this.deps.readBalance(owner, b)
+        ]);
+        this.quote = quote;
+        this.allowance = allowance;
+        this.balance = balance;
+        ok = true;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (!ok) {
+      return this.show("blocked", "Try again", false, { kind: "bad", text: "Could not read Base: " + this.deps.explain(lastErr) });
+    }
+    const q = this.quote;
+    if (q.paused) {
+      return this.show("blocked", "Minting paused", true, {
+        kind: "bad",
+        text: "The contract owner has paused the contract, so minting is stopped for now."
+      });
+    }
+    if (this.balance < q.price) {
+      return this.show("blocked", `Need ${q.whole} GEAR`, true, {
+        kind: "bad",
+        text: `Copy #${q.serial} costs ${q.whole} GEAR and this wallet holds ${this.deps.formatGear(this.balance)} GEAR.`
+      });
+    }
+    if (this.allowance >= q.price) this.show("mint", this.mintLabel(), false);
+    else this.show("approve", `Approve ${q.whole} GEAR`, false);
+  }
+  /** The one button. Each tap sends at most one wallet request. */
+  async tap() {
+    if (this.busy()) return;
+    switch (this.view.step) {
+      case "connect":
+        try {
+          const ok = await this.deps.connect();
+          await this.refresh(ok ? null : { kind: "bad", text: "Switch your wallet to Base, then tap again." });
+        } catch (e) {
+          this.show("connect", "Connect wallet to mint", false, { kind: "bad", text: this.deps.explain(e) });
+        }
+        return;
+      case "blocked":
+        return this.refresh(null);
+      case "approve":
+        return this.approve();
+      case "mint":
+        return this.mint();
+    }
+  }
+  async approve() {
+    const owner = this.deps.account();
+    const q = this.quote;
+    if (!owner || !q) return this.refresh(null);
+    const amount = q.price;
+    this.show("approving", "Confirm in your wallet\u2026", true, {
+      kind: "info",
+      text: `Step 1 of 2: approve exactly ${q.whole} GEAR for the tablets contract in your wallet.`
+    });
+    let hash3;
+    try {
+      if (!await this.deps.ensureBase()) throw new Error("Switch your wallet to Base, then tap again.");
+      hash3 = await this.deps.sendApprove(owner, amount);
+    } catch (e) {
+      return this.show("approve", `Approve ${q.whole} GEAR`, false, { kind: "bad", text: this.deps.explain(e) });
+    }
+    this.show("approving", "Waiting for Base\u2026", true, {
+      kind: "info",
+      text: "Approval sent. Waiting for Base to confirm it before the Mint button turns on\u2026",
+      tx: hash3
+    });
+    const confirmed = await this.waitForAllowance(owner, hash3, amount);
+    this.view = { ...this.view, step: "checking" };
+    if (confirmed === "reverted") {
+      await this.refresh({ kind: "bad", text: "The approval failed on Base. Nothing was spent. Tap Approve to try again.", tx: hash3 });
+      return;
+    } else if (confirmed === "ok") {
+      this.allowance = amount;
+      this.show("mint", this.mintLabel(), false, {
+        kind: "ok",
+        text: `Approved ${q.whole} GEAR. Step 2 of 2: tap Mint to finish.`,
+        tx: hash3
+      });
+      this.onSettled?.();
+    } else {
+      await this.refresh({
+        kind: "info",
+        text: "Base has not confirmed the approval yet. If your wallet shows it as done, tap the button to check again.",
+        tx: hash3
+      });
+    }
+  }
+  /**
+   * Wait until the new allowance is visible from a fresh read. Uses the receipt when the wallet
+   * returned a normal transaction hash, and keeps polling the allowance either way (smart wallets
+   * can return an id that is not a transaction hash).
+   */
+  async waitForAllowance(owner, hash3, amount) {
+    let receipt = null;
+    this.deps.waitReceipt(hash3, CONFIRM_POLL_MS * CONFIRM_MAX_POLLS).then(
+      (r) => receipt = r,
+      () => void 0
+    );
+    for (let i = 0; i < CONFIRM_MAX_POLLS; i++) {
+      await this.deps.sleep(CONFIRM_POLL_MS);
+      const r = receipt;
+      if (r?.status === "reverted") return "reverted";
+      try {
+        const a = await this.deps.readAllowance(owner, r?.blockNumber);
+        if (a >= amount) return "ok";
+      } catch {
+      }
+    }
+    return "timeout";
+  }
+  async mint() {
+    const owner = this.deps.account();
+    const q = this.quote;
+    if (!owner || !q) return this.refresh(null);
+    this.show("minting", "Confirm in your wallet\u2026", true, {
+      kind: "info",
+      text: `Confirm the mint of copy #${q.serial} for ${q.whole} GEAR in your wallet.`
+    });
+    let hash3;
+    try {
+      if (!await this.deps.ensureBase()) throw new Error("Switch your wallet to Base, then tap again.");
+      hash3 = await this.deps.sendMint(owner, this.tabletId, q.price);
+    } catch (e) {
+      this.view = { ...this.view, step: "checking" };
+      return this.refresh({ kind: "bad", text: this.deps.explain(e) });
+    }
+    this.show("minting", "Minting\u2026", true, { kind: "info", text: "Mint sent. Waiting for Base\u2026", tx: hash3 });
+    const before = this.allowance;
+    const r = await this.waitForMint(owner, hash3, before, q.price);
+    let message;
+    let atBlock;
+    if (r === "timeout") {
+      message = { kind: "info", text: "Mint sent. Base is taking a while to confirm it; check your wallet.", tx: hash3 };
+    } else if (r.status === "success") {
+      atBlock = r.blockNumber;
+      const m = r.minted;
+      message = {
+        kind: "ok",
+        text: m ? `You minted Prophecy Tablet ${m.tabletId} #${m.serial} (token ID ${m.tokenId}).` : `You minted copy #${q.serial} of Tablet #${this.tabletId}.`,
+        tx: hash3
+      };
+    } else {
+      atBlock = r.blockNumber;
+      message = { kind: "bad", text: "The mint failed on Base. Your GEAR was not spent.", tx: hash3 };
+    }
+    this.view = { ...this.view, step: "checking" };
+    await this.refresh(message, atBlock);
+    this.onSettled?.();
+  }
+  /**
+   * Wait for the mint: the receipt when the wallet returned a normal transaction hash, or the
+   * wallet's GEAR allowance dropping by the price (only this wallet's mint can do that).
+   */
+  async waitForMint(owner, hash3, allowanceBefore, price) {
+    let receipt = null;
+    this.deps.waitReceipt(hash3, CONFIRM_POLL_MS * CONFIRM_MAX_POLLS).then(
+      (r) => receipt = r,
+      () => void 0
+    );
+    for (let i = 0; i < CONFIRM_MAX_POLLS; i++) {
+      await this.deps.sleep(CONFIRM_POLL_MS);
+      const r = receipt;
+      if (r) return r;
+      try {
+        const a = await this.deps.readAllowance(owner);
+        if (a + price <= allowanceBefore) {
+          await this.deps.sleep(CONFIRM_POLL_MS);
+          return receipt ?? { status: "success" };
+        }
+      } catch {
+      }
+    }
+    return "timeout";
+  }
+};
+
+// src/walletCore.ts
+var REMEMBER_KEY = "capsmind.wallet.connected";
+var BASE_CHAIN_ID = 8453;
+function shortAddress(a) {
+  return a.slice(0, 6) + "\u2026" + a.slice(-4);
+}
+function walletButtonView(s) {
+  if (s.account) {
+    return {
+      label: `Connected ${shortAddress(s.account)}`,
+      connected: true,
+      title: s.chainId === BASE_CHAIN_ID ? "Tap to disconnect" : "Connected, but not on Base. Tap to disconnect."
+    };
+  }
+  if (s.busy) return { label: "Connecting\u2026", connected: false, title: "Check your wallet" };
+  return { label: "Connect wallet", connected: false, title: s.hasProvider ? "Tap to connect your wallet" : "No browser wallet found" };
+}
+var WalletController = class {
+  constructor(getProvider, store, chainId = BASE_CHAIN_ID) {
+    this.getProvider = getProvider;
+    this.store = store;
+    this.chainId = chainId;
+    this.state = { account: null, chainId: null, hasProvider: !!getProvider(), busy: false };
+  }
+  getProvider;
+  store;
+  chainId;
+  state;
+  listeners = /* @__PURE__ */ new Set();
+  subscribe(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  set(patch) {
+    this.state = { ...this.state, ...patch };
+    for (const fn of this.listeners) fn(this.state);
+  }
+  remember(on) {
+    try {
+      if (on) this.store?.setItem(REMEMBER_KEY, "1");
+      else this.store?.removeItem(REMEMBER_KEY);
+    } catch {
+    }
+  }
+  remembered() {
+    try {
+      return this.store?.getItem(REMEMBER_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  async readChain(eth) {
+    try {
+      return Number(await eth.request({ method: "eth_chainId" }));
+    } catch {
+      return null;
+    }
+  }
+  /** Restore a connection only if the visitor connected here before AND the wallet still reports the account. */
+  async init() {
+    const eth = this.getProvider();
+    this.set({ hasProvider: !!eth });
+    if (!eth) return;
+    eth.on?.("accountsChanged", (accs) => {
+      const list = accs || [];
+      if (!list[0]) {
+        this.remember(false);
+        this.set({ account: null });
+      } else if (this.state.account) {
+        this.set({ account: getAddress(list[0]) });
+      }
+    });
+    eth.on?.("chainChanged", (id) => this.set({ chainId: Number(id) }));
+    eth.on?.("disconnect", () => this.set({ account: null }));
+    const chainId = await this.readChain(eth);
+    let account2 = null;
+    if (this.remembered()) {
+      try {
+        const accs = await eth.request({ method: "eth_accounts" });
+        if (accs?.[0]) account2 = getAddress(accs[0]);
+        else this.remember(false);
+      } catch {
+      }
+    }
+    this.set({ account: account2, chainId });
+  }
+  /** Ask the wallet to connect, then make sure it is on Base. Returns true when connected on Base. */
+  async connect() {
+    const eth = this.getProvider();
+    if (!eth) throw new Error("No browser wallet found. Install or unlock Coinbase Wallet, Rabby, or MetaMask, then reload.");
+    this.set({ busy: true });
+    try {
+      const accs = await eth.request({ method: "eth_requestAccounts" });
+      const account2 = accs?.[0] ? getAddress(accs[0]) : null;
+      if (!account2) return false;
+      this.remember(true);
+      this.set({ account: account2, chainId: await this.readChain(eth) });
+      return this.ensureBase();
+    } finally {
+      this.set({ busy: false });
+    }
+  }
+  /** Forget the wallet on this site and ask the wallet to drop the site's permission where it can. */
+  async disconnect() {
+    this.remember(false);
+    this.set({ account: null });
+    const eth = this.getProvider();
+    if (!eth) return;
+    try {
+      await eth.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+    }
+  }
+  async toggle() {
+    if (this.state.account) await this.disconnect();
+    else await this.connect();
+  }
+  /** Switch (or add) Base. Returns true when the wallet is on Base. */
+  async ensureBase() {
+    const eth = this.getProvider();
+    if (!eth) return false;
+    if (this.state.chainId === this.chainId) return true;
+    const hex = "0x" + this.chainId.toString(16);
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+    } catch (err) {
+      if (err?.code === 4902) {
+        try {
+          await eth.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: hex,
+                chainName: "Base",
+                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                rpcUrls: ["https://mainnet.base.org"],
+                blockExplorerUrls: ["https://basescan.org"]
+              }
+            ]
+          });
+        } catch {
+        }
+      }
+    }
+    const chainId = await this.readChain(eth);
+    this.set({ chainId });
+    return chainId === this.chainId;
+  }
+};
+
+// web/walletUi.ts
+function provider() {
+  return window.ethereum;
+}
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+function explainWalletError(err) {
+  const e = err;
+  if (e?.code === 4001) return "You rejected the request in your wallet. Nothing was sent.";
+  if (e?.code === -32002) return "Your wallet already has a request open. Open the wallet to finish it.";
+  return e?.shortMessage || e?.message || String(err);
+}
+function initWalletUi() {
+  const wallet2 = new WalletController(provider, storage());
+  const btn = document.getElementById("walletBtn");
+  const render = () => {
+    if (!btn) return;
+    const v = walletButtonView(wallet2.state);
+    btn.textContent = v.label;
+    btn.title = v.title;
+    btn.classList.toggle("connected", v.connected);
+    btn.setAttribute("aria-pressed", v.connected ? "true" : "false");
+    btn.setAttribute("aria-label", v.connected ? `${v.label}. Tap to disconnect.` : "Connect wallet");
+    btn.disabled = wallet2.state.busy;
+  };
+  wallet2.subscribe(render);
+  render();
+  btn?.addEventListener("click", () => {
+    void wallet2.toggle().catch((e) => {
+      if (e?.code === 4001) return;
+      alert(explainWalletError(e));
+    });
+  });
+  return wallet2;
+}
+
 // web/client.ts
 var TABLETS_ADDR = getAddress(TABLETS.address);
 var KEY_ADDR = getAddress(TABLETS.keyAddress);
@@ -20176,10 +20597,14 @@ var GEAR_ADDR = getAddress(TABLETS.gearAddress);
 var MAX_KEY_SCAN = 500;
 var pub = createPublicClient({
   chain: base,
-  transport: fallback(TABLETS.readRpcs.map((u) => http(u))),
+  transport: fallback(
+    TABLETS.readRpcs.map((u) => http(u, { timeout: 1e4, retryCount: 1 })),
+    { retryCount: 2 }
+  ),
   batch: { multicall: true }
 });
 var info = window.__TABLETS_PAGE__ || { page: "gallery" };
+var wallet = initWalletUi();
 var account = null;
 var walletChainId = null;
 var busy = false;
@@ -20206,7 +20631,7 @@ function showMsg(el, kind, html) {
   el.className = "msg show" + (kind === "info" ? "" : " " + kind);
   el.innerHTML = html;
 }
-function provider() {
+function provider2() {
   return window.ethereum;
 }
 function gear(raw) {
@@ -20225,63 +20650,19 @@ function explain(err) {
   if (e?.code === 4001) return "You rejected the request in your wallet. Nothing was sent.";
   return e?.message || String(err);
 }
-async function readWalletChain() {
-  const eth = provider();
-  if (!eth) return;
-  try {
-    walletChainId = Number(await eth.request({ method: "eth_chainId" }));
-  } catch {
-    walletChainId = null;
-  }
+async function connect() {
+  return wallet.connect();
 }
 async function switchToBase() {
-  const eth = provider();
-  if (!eth) return false;
-  const chainId = toHex(TABLETS.chainId);
-  try {
-    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
-  } catch (err) {
-    if (err?.code === 4902) {
-      await eth.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId,
-            chainName: "Base",
-            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["https://mainnet.base.org"],
-            blockExplorerUrls: [TABLETS.explorer]
-          }
-        ]
-      });
-    }
-  }
-  await readWalletChain();
-  return walletChainId === TABLETS.chainId;
-}
-async function connect() {
-  const eth = provider();
-  if (!eth) {
-    alert("No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.");
-    return false;
-  }
-  const accounts = await eth.request({ method: "eth_requestAccounts" });
-  account = accounts[0] ? getAddress(accounts[0]) : null;
-  await readWalletChain();
-  if (account && walletChainId !== TABLETS.chainId) await switchToBase();
-  await onWalletChanged();
-  return !!account && walletChainId === TABLETS.chainId;
+  return wallet.ensureBase();
 }
 async function ensureReady(msgEl) {
   try {
-    if (!account) {
-      if (!await connect()) {
-        if (account) showMsg(msgEl, "bad", "Switch your wallet to Base and try again.");
-        return false;
-      }
+    if (!account && !await connect()) {
+      if (account) showMsg(msgEl, "bad", "Switch your wallet to Base and try again.");
+      return false;
     }
-    await readWalletChain();
-    if (walletChainId !== TABLETS.chainId && !await switchToBase()) {
+    if (!await switchToBase()) {
       showMsg(msgEl, "bad", "Your wallet is not on Base. Switch to Base and try again.");
       return false;
     }
@@ -20292,22 +20673,19 @@ async function ensureReady(msgEl) {
   }
 }
 function walletClient() {
-  const eth = provider();
+  const eth = provider2();
   if (!eth || !account) throw new Error("Connect your wallet first.");
   return createWalletClient({ account, chain: base, transport: custom(eth) });
 }
 async function renderWalletLine() {
-  setText("walletChip", account ? short(account) : "Wallet disconnected");
-  const cb = $("connectBtn");
-  if (cb) cb.textContent = account ? "Reconnect" : "Connect wallet";
   const line = $("walletLine");
   if (!line) return;
   if (!account) {
-    line.textContent = "Connect a wallet on Base to mint. You pay in GEAR.";
+    line.textContent = "Use the wallet button at the top to connect on Base. You pay in GEAR.";
     return;
   }
   if (walletChainId !== TABLETS.chainId) {
-    line.innerHTML = '<span class="bad">Wrong network. Switch your wallet to Base.</span>';
+    line.innerHTML = '<span class="bad">Your wallet is on another network. Switch it to Base.</span>';
     return;
   }
   try {
@@ -20317,12 +20695,20 @@ async function renderWalletLine() {
     line.textContent = `${short(account)} on Base`;
   }
 }
+var lastWalletKey = "";
 async function onWalletChanged() {
+  const key = `${account}|${walletChainId}`;
+  if (key === lastWalletKey) return;
+  lastWalletKey = key;
   await renderWalletLine();
+  for (const f of mintFlows) void f.refresh(null);
   if (info.page === "publish") await refreshPublish();
 }
 async function readTablet(id) {
   const row = await pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "getTablet", args: [BigInt(id)] });
+  return rowToTablet(id, row);
+}
+function rowToTablet(id, row) {
   return {
     id,
     imageURI: row[0],
@@ -20343,69 +20729,84 @@ function renderTabletNumbers(t) {
   document.querySelectorAll(`[data-price="${t.id}"]`).forEach((el) => {
     el.textContent = detail ? `#${t.minted + 1} for ${t.nextPriceWholeGear} GEAR` : `${t.nextPriceWholeGear} GEAR next`;
   });
-  document.querySelectorAll(`[data-mint="${t.id}"]`).forEach((b) => {
-    b.textContent = `Mint copy #${t.minted + 1} for ${t.nextPriceWholeGear} GEAR`;
-  });
 }
-async function mintTablet(id) {
-  const msg = document.querySelector(`[data-mint-msg="${id}"]`);
-  if (busy) return;
-  if (!await ensureReady(msg) || !account) return;
-  busy = true;
-  const buttons = document.querySelectorAll("[data-mint]");
-  buttons.forEach((b) => b.disabled = true);
-  try {
-    showMsg(msg, "info", "Checking the price\u2026");
-    const [paused, price, whole, bal, allowance] = await Promise.all([
-      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "paused" }),
-      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPrice", args: [BigInt(id)] }),
-      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPriceWhole", args: [BigInt(id)] }),
-      pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "balanceOf", args: [account] }),
-      pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "allowance", args: [account, TABLETS_ADDR] })
+var mintDeps = {
+  account: () => account,
+  connect: () => connect(),
+  ensureBase: () => switchToBase(),
+  async readQuote(tabletId, blockNumber) {
+    const [paused, price, whole, row] = await Promise.all([
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "paused", blockNumber }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPrice", args: [BigInt(tabletId)], blockNumber }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPriceWhole", args: [BigInt(tabletId)], blockNumber }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "getTablet", args: [BigInt(tabletId)], blockNumber })
     ]);
-    if (paused) return showMsg(msg, "bad", esc(TABLET_ERROR_TEXT.PausedError));
-    if (bal < price) {
-      return showMsg(msg, "bad", `This copy costs ${whole} GEAR and this wallet holds ${gear(bal)} GEAR.`);
+    const minted = Number(row[2]);
+    renderTabletNumbers({ ...rowToTablet(tabletId, row), minted });
+    return { price, whole: Number(whole), serial: minted + 1, paused };
+  },
+  readAllowance: (owner, blockNumber) => pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "allowance", args: [owner, TABLETS_ADDR], blockNumber }),
+  readBalance: (owner, blockNumber) => pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "balanceOf", args: [owner], blockNumber }),
+  // Plain single transactions, one per tap. No batching (wallet_sendCalls) and no pre-simulation:
+  // the wallet estimates the transaction itself when it opens.
+  sendApprove: (owner, amount) => walletClient().writeContract({ account: owner, address: GEAR_ADDR, abi: erc20Abi2, functionName: "approve", args: [TABLETS_ADDR, amount] }),
+  sendMint: (owner, tabletId, maxPrice) => walletClient().writeContract({
+    account: owner,
+    address: TABLETS_ADDR,
+    abi: tabletsAbi,
+    functionName: "mint",
+    args: [BigInt(tabletId), maxPrice]
+  }),
+  async waitReceipt(hash3, timeoutMs) {
+    const r = await pub.waitForTransactionReceipt({ hash: hash3, timeout: timeoutMs, pollingInterval: 2e3 });
+    const ev = parseEventLogs({ abi: tabletsAbi, eventName: "TabletMinted", logs: r.logs })[0];
+    return {
+      status: r.status,
+      blockNumber: r.blockNumber,
+      minted: ev ? { tabletId: ev.args.tabletId, serial: ev.args.serial, tokenId: ev.args.tokenId } : void 0
+    };
+  },
+  sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
+  explain: (e) => explain(e),
+  formatGear: (raw) => gear(raw)
+};
+var mintFlows = [];
+function renderMintView(id, v) {
+  document.querySelectorAll(`[data-mint="${id}"]`).forEach((b) => {
+    b.textContent = v.label;
+    b.disabled = v.disabled;
+    b.dataset.step = v.step;
+  });
+  const msg = document.querySelector(`[data-mint-msg="${id}"]`);
+  if (!v.message) {
+    if (msg) {
+      msg.className = "msg";
+      msg.innerHTML = "";
     }
-    const wallet = walletClient();
-    if (allowance < price) {
-      showMsg(msg, "info", `Step 1 of 2: approve exactly ${whole} GEAR for the tablets contract in your wallet.`);
-      const approveHash = await wallet.writeContract({
-        address: GEAR_ADDR,
-        abi: erc20Abi2,
-        functionName: "approve",
-        args: [TABLETS_ADDR, price]
-      });
-      showMsg(msg, "info", `Approval sent (${txLink(approveHash)}). Waiting for Base\u2026`);
-      const r = await pub.waitForTransactionReceipt({ hash: approveHash });
-      if (r.status !== "success") return showMsg(msg, "bad", `The approval ${txLink(approveHash)} failed on chain.`);
-    }
-    showMsg(msg, "info", `${allowance < price ? "Step 2 of 2: c" : "C"}onfirm the mint for ${whole} GEAR in your wallet.`);
-    const { request } = await pub.simulateContract({
-      address: TABLETS_ADDR,
-      abi: tabletsAbi,
-      functionName: "mint",
-      args: [BigInt(id), price],
-      account
-    });
-    const hash3 = await wallet.writeContract(request);
-    showMsg(msg, "info", `Mint sent (${txLink(hash3)}). Waiting for Base\u2026`);
-    const receipt = await pub.waitForTransactionReceipt({ hash: hash3 });
-    if (receipt.status !== "success") return showMsg(msg, "bad", `The mint ${txLink(hash3)} failed on chain.`);
-    const ev = parseEventLogs({ abi: tabletsAbi, eventName: "TabletMinted", logs: receipt.logs })[0];
-    const what = ev ? `Prophecy Tablet ${ev.args.tabletId} #${ev.args.serial} (token ID ${ev.args.tokenId})` : `a copy of Tablet #${id}`;
-    showMsg(msg, "ok", `You minted ${esc(what)}. Transaction ${txLink(hash3)}.`);
-  } catch (e) {
-    showMsg(msg, "bad", esc(explain(e)));
-  } finally {
-    busy = false;
-    buttons.forEach((b) => b.disabled = false);
-    try {
-      renderTabletNumbers(await readTablet(id));
-    } catch {
-    }
-    void renderWalletLine();
+    return;
   }
+  const extra = v.message.tx ? ` ${txLink(v.message.tx)}` : "";
+  showMsg(msg, v.message.kind, esc(v.message.text) + extra);
+}
+function bootMint() {
+  document.querySelectorAll("[data-mint]").forEach((b) => {
+    const id = Number(b.dataset.mint);
+    if (mintFlows.some((f) => f.tabletId === id)) return;
+    const flow = new MintFlow(id, mintDeps);
+    flow.subscribe((v) => renderMintView(id, v));
+    flow.onSettled = () => {
+      void renderWalletLine();
+      for (const other of mintFlows) if (other !== flow) void other.refresh();
+    };
+    mintFlows.push(flow);
+    renderMintView(id, flow.view);
+  });
+  document.querySelectorAll("[data-mint]").forEach(
+    (b) => b.addEventListener("click", () => {
+      const flow = mintFlows.find((f) => f.tabletId === Number(b.dataset.mint));
+      void flow?.tap();
+    })
+  );
 }
 function decodeTokenUri(uri) {
   const prefix = "data:application/json;base64,";
@@ -20476,8 +20877,8 @@ function selectedKey() {
 }
 function gateReason() {
   const s = pubState;
-  if (!provider()) return "No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.";
-  if (!account) return "Connect a wallet that holds a CAPs Mind key.";
+  if (!provider2()) return "No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.";
+  if (!account) return "Tap Connect wallet at the top and pick the wallet that holds your CAPs Mind key.";
   if (walletChainId !== TABLETS.chainId) return "Your wallet is on the wrong network. Switch to Base.";
   if (!s) return "Reading Base\u2026";
   if (s.keyScanError) return `Could not check your CAPs Mind keys: ${s.keyScanError}`;
@@ -20529,7 +20930,7 @@ function renderPublish() {
   const why = gateReason();
   const gate = $("gateMsg");
   const key = selectedKey();
-  const neutral = !s || !account && !!provider();
+  const neutral = !s || !account && !!provider2();
   if (why) showMsg(gate, neutral ? "info" : "bad", esc(why));
   else showMsg(gate, "ok", `CAPs Mind key #${key.id} is ready. You can publish and edit tablets.`);
   for (const p of PREVIEW_PROPHECIES) {
@@ -20634,7 +21035,7 @@ async function sendKeyTx(kind) {
     });
     if (!ok) return showMsg(msg, "bad", esc(`The contract says key #${key.id} cannot publish from this wallet right now. Refresh and check the messages above.`));
     showMsg(msg, "info", "Checking with the contract\u2026");
-    const wallet = walletClient();
+    const wallet2 = walletClient();
     let hash3;
     if (kind === "publish") {
       const { request, result } = await pub.simulateContract({
@@ -20645,7 +21046,7 @@ async function sendKeyTx(kind) {
         account
       });
       showMsg(msg, "info", `Confirm in your wallet. This publishes Tablet #${result} with key #${key.id}.`);
-      hash3 = await wallet.writeContract(request);
+      hash3 = await wallet2.writeContract(request);
     } else {
       const { request } = await pub.simulateContract({
         address: TABLETS_ADDR,
@@ -20655,7 +21056,7 @@ async function sendKeyTx(kind) {
         account
       });
       showMsg(msg, "info", `Confirm in your wallet. This changes Tablet #${tabletId} for every copy.`);
-      hash3 = await wallet.writeContract(request);
+      hash3 = await wallet2.writeContract(request);
     }
     showMsg(msg, "info", `Sent (${txLink(hash3)}). Waiting for Base\u2026`);
     const receipt = await pub.waitForTransactionReceipt({ hash: hash3 });
@@ -20741,32 +21142,15 @@ function bootPublish() {
   });
 }
 async function boot() {
-  $("connectBtn")?.addEventListener("click", () => {
-    void connect().catch((e) => alert(explain(e)));
-  });
-  document.querySelectorAll("[data-mint]").forEach(
-    (b) => b.addEventListener("click", () => void mintTablet(Number(b.dataset.mint)))
-  );
+  bootMint();
   $("lookupBtn")?.addEventListener("click", () => void lookupCopy());
   if (info.page === "publish") bootPublish();
-  const eth = provider();
-  if (eth) {
-    eth.on?.("accountsChanged", (accs) => {
-      const list = accs;
-      account = list?.[0] ? getAddress(list[0]) : null;
-      void onWalletChanged();
-    });
-    eth.on?.("chainChanged", (id) => {
-      walletChainId = Number(id);
-      void onWalletChanged();
-    });
-    try {
-      const accs = await eth.request({ method: "eth_accounts" });
-      if (accs[0]) account = getAddress(accs[0]);
-    } catch {
-    }
-    await readWalletChain();
-  }
+  wallet.subscribe((st) => {
+    account = st.account;
+    walletChainId = st.chainId;
+    void onWalletChanged();
+  });
+  await wallet.init();
   await onWalletChanged();
 }
 void boot();

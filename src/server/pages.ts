@@ -21,7 +21,7 @@ export function page(
 <style>
 :root {
   --bg:#07090f; --panel:#101522; --line:#243049; --text:#e8eefc; --dim:#8b9bb8;
-  --accent:#3b82f6; --accent2:#93c5fd; --ok:#3ddc84; --bad:#ff5c7a; --tablet:#1e3a8a;
+  --accent:#3b82f6; --walletBlue:#2563eb; --accent2:#93c5fd; --ok:#3ddc84; --bad:#ff5c7a; --tablet:#1e3a8a;
 }
 * { box-sizing:border-box; }
 body {
@@ -44,10 +44,16 @@ header {
 nav { display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
 nav a { color:var(--dim); font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
 nav a.on, nav a:hover { color:var(--accent2); text-decoration:none; }
-.wallet {
-  font:12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--dim);
-  border:1px solid var(--line); border-radius:999px; padding:8px 12px; background:var(--panel);
+/* Header wallet toggle: white with blue text when disconnected, solid blue with white text when connected. */
+.walletbtn {
+  font:700 13px/1.2 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:.02em;
+  border:2px solid var(--walletBlue); border-radius:999px; padding:9px 16px; cursor:pointer;
+  background:#ffffff; color:var(--walletBlue); white-space:nowrap;
 }
+.walletbtn:hover { box-shadow:0 0 0 3px #3b82f655; }
+.walletbtn:focus-visible { outline:2px solid #ffffff; outline-offset:2px; }
+.walletbtn.connected { background:var(--walletBlue); color:#ffffff; }
+.walletbtn:disabled { opacity:.7; cursor:progress; }
 main { max-width:1080px; margin:0 auto; padding:20px 16px 64px; }
 .banner {
   border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--panel);
@@ -112,7 +118,7 @@ footer .gear-logo-link img { height:1.35em; width:auto; display:block; image-ren
     <a href="/publish" class="${active === 'publish' ? 'on' : ''}">Publish</a>
     <a href="/key" class="${active === 'key' ? 'on' : ''}">Key</a>
   </nav>
-  <div class="wallet" id="walletChip">Wallet disconnected</div>
+  <button type="button" class="walletbtn" id="walletBtn" aria-pressed="false" aria-label="Connect wallet">Connect wallet</button>
 </header>
 <main>
 ${body}

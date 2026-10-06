@@ -26,6 +26,7 @@ import {
   hexToUtf8,
   metadataDataUri,
 } from '../src/capsMindNft.js';
+import { initWalletUi } from './walletUi.js';
 
 type Eip1193 = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -36,8 +37,13 @@ const NFT = getAddress(C.address);
 const DEFAULT_META_URI = C.siteOrigin + C.defaultMetadataPath;
 const pub = createPublicClient({
   chain: base,
-  transport: fallback(C.readRpcs.map((u) => http(u))),
+  transport: fallback(
+    C.readRpcs.map((u) => http(u, { timeout: 10_000, retryCount: 1 })),
+    { retryCount: 2 },
+  ),
+  batch: { multicall: true },
 });
+const wallet = initWalletUi();
 
 type ChainState = {
   name: string;
@@ -206,8 +212,6 @@ function renderChain() {
 
 function renderWallet() {
   const sw = $('switchBtn');
-  const cb = $('connectBtn');
-  setText('walletChip', account ? short(account) : 'Wallet disconnected');
   if (!account) {
     setText('wAddr', 'Not connected');
     setText('wChain', '-');
@@ -215,10 +219,8 @@ function renderWallet() {
     setText('wGear', '-');
     setText('wCanMint', '-');
     if (sw) sw.style.display = 'none';
-    if (cb) cb.textContent = 'Connect wallet';
     return;
   }
-  if (cb) cb.textContent = 'Reconnect';
   setHtml('wAddr', addrLink(account));
   const onBase = walletChainId === C.chainId;
   setHtml(
@@ -307,7 +309,7 @@ function renderButtons() {
   let why = '';
   if (!s) why = 'Loading contract state…';
   else if (s.genesis) why = 'Key #1 is already minted. Use "Set tokenURI" to change its art.';
-  else if (!account) why = 'Connect the owner wallet.';
+  else if (!account) why = 'Connect the owner wallet with the button at the top.';
   else if (!onBase) why = 'Switch your wallet to Base.';
   else if (!isOwner) why = `This wallet is not the contract owner. Connect ${short(s.owner)}.`;
   else if (walletInfo?.hasMinted) why = 'This wallet has already minted a key.';
@@ -326,10 +328,6 @@ function renderButtons() {
   if (tr) tr.disabled = !ownerReady;
   const ac = $<HTMLButtonElement>('acceptBtn');
   if (ac) ac.disabled = busy || !onBase || !isPending;
-  if (s && (isPending || !same(s.owner, C.plannedOwner))) {
-    const d = $<HTMLDetailsElement>('ownerDetails');
-    if (d) d.open = true;
-  }
 }
 
 async function refreshAll() {
@@ -348,59 +346,14 @@ async function refreshAll() {
   await renderArt();
 }
 
+/** The header wallet button owns the connection; these keep the old call sites working. */
 async function readWalletChain() {
-  const eth = provider();
-  if (!eth) return;
-  try {
-    walletChainId = Number(await eth.request({ method: 'eth_chainId' }));
-  } catch {
-    walletChainId = null;
-  }
+  walletChainId = wallet.state.chainId;
 }
 
 async function switchToBase() {
-  const eth = provider();
-  if (!eth) return;
-  const chainId = toHex(C.chainId);
-  try {
-    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] });
-  } catch (err) {
-    const code = (err as { code?: number })?.code;
-    if (code === 4902) {
-      await eth.request({
-        method: 'wallet_addEthereumChain',
-        params: [
-          {
-            chainId,
-            chainName: 'Base',
-            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-            rpcUrls: ['https://mainnet.base.org'],
-            blockExplorerUrls: [C.explorer],
-          },
-        ],
-      });
-    } else {
-      showMsg('bad', 'Could not switch networks: ' + esc(explain(err)) + ' Switch to Base in your wallet.');
-    }
-  }
-  await readWalletChain();
-}
-
-async function connect() {
-  const eth = provider();
-  if (!eth) {
-    showMsg('bad', 'No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.');
-    return;
-  }
-  try {
-    const accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[];
-    account = accounts[0] ? getAddress(accounts[0]) : null;
-    await readWalletChain();
-    if (walletChainId !== C.chainId) await switchToBase();
-    await refreshAll();
-  } catch (e) {
-    showMsg('bad', esc(explain(e)));
-  }
+  await wallet.ensureBase();
+  walletChainId = wallet.state.chainId;
 }
 
 type WriteFn = 'ownerGenesisMint' | 'setTokenURI' | 'setBaseURI' | 'transferOwnership' | 'acceptOwnership';
@@ -408,7 +361,7 @@ type WriteFn = 'ownerGenesisMint' | 'setTokenURI' | 'setBaseURI' | 'transferOwne
 /** Simulate first (catches reverts before signing), then ask the wallet to sign and wait for the receipt. */
 async function send(fn: WriteFn, args: readonly unknown[], label: string) {
   const eth = provider();
-  if (!eth || !account) return showMsg('bad', 'Connect your wallet first.');
+  if (!eth || !account) return showMsg('bad', 'Tap Connect wallet at the top first.');
   await readWalletChain();
   if (walletChainId !== C.chainId) {
     await switchToBase();
@@ -467,7 +420,6 @@ async function boot() {
     /* keep defaults */
   }
 
-  $('connectBtn')?.addEventListener('click', () => void connect());
   $('switchBtn')?.addEventListener('click', async () => {
     await switchToBase();
     renderWallet();
@@ -507,25 +459,20 @@ async function boot() {
   });
   $('acceptBtn')?.addEventListener('click', () => void send('acceptOwnership', [], 'Accept ownership'));
 
-  const eth = provider();
-  if (eth) {
-    eth.on?.('accountsChanged', (accs: unknown) => {
-      const list = accs as string[];
-      account = list?.[0] ? getAddress(list[0]) : null;
+  let lastKey = '';
+  wallet.subscribe((st) => {
+    account = st.account;
+    walletChainId = st.chainId;
+    const key = `${account}|${walletChainId}`;
+    if (key !== lastKey) {
+      lastKey = key;
       void refreshAll();
-    });
-    eth.on?.('chainChanged', (id: unknown) => {
-      walletChainId = Number(id);
-      void refreshAll();
-    });
-    try {
-      const accs = (await eth.request({ method: 'eth_accounts' })) as string[];
-      if (accs[0]) account = getAddress(accs[0]);
-    } catch {
-      /* not authorized yet */
     }
-    await readWalletChain();
-  }
+  });
+  await wallet.init();
+  lastKey = `${wallet.state.account}|${wallet.state.chainId}`;
+  account = wallet.state.account;
+  walletChainId = wallet.state.chainId;
   await refreshAll();
 }
 

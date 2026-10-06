@@ -10,7 +10,7 @@ Live on Base mainnet:
 
 Site pages (capsmind.gearup.wtf):
 
-- `/` lists onchain tablets with a Mint button (approve the exact GEAR price, then `mint(tabletId, nextPrice)`). Cap's two prophecies show as "Not yet onchain" previews until a tablet with the same image is published.
+- `/` lists onchain tablets with a two-tap mint button: "Approve N GEAR" (exact price), then, once Base confirms, "Mint copy #S for N GEAR" (`mint(tabletId, nextPrice)`). One wallet request per tap, no batching. The header button connects and disconnects the wallet on every page. Cap's two prophecies show as "Not yet onchain" previews until a tablet with the same image is published.
 - `/tablet/:id` one tablet with mint. `/preview/1` and `/preview/2` the previews. Old `/prophecy/:id` links redirect to `/tablet/:id`.
 - `/publish` CAPs Mind key holders pick a key, then `publishTablet` or `updateTablet`. Quick-fill buttons for Prophecy 1 and 2.
 - `/key` owner page for the CAPs Mind key contract.

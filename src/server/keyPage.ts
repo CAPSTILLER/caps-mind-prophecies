@@ -59,8 +59,8 @@ details summary { cursor:pointer; color:var(--accent2); }
 
   <div class="panel">
     <h2><span class="step">WALLET</span>Your wallet</h2>
+    <p class="note" style="margin-top:0">Use the wallet button at the top to connect or disconnect.</p>
     <div class="row" style="margin-top:0">
-      <button type="button" id="connectBtn" class="primary">Connect wallet</button>
       <button type="button" id="switchBtn" style="display:none">Switch to Base</button>
     </div>
     <div class="kv"><span>Connected</span><span class="mono" id="wAddr">Not connected</span></div>
@@ -116,7 +116,7 @@ details summary { cursor:pointer; color:var(--accent2); }
     </details>
     <details style="margin-top:12px" id="ownerDetails"><summary>Contract ownership</summary>
       <p class="note">Two steps: the current owner calls <code>transferOwnership(newOwner)</code>, then the new owner wallet connects here and calls <code>acceptOwnership()</code>. Ownership does not move until it is accepted.</p>
-      <input id="newOwnerIn" value="${escapeHtml(c.plannedOwner)}"/>
+      <input id="newOwnerIn" value="" placeholder="New owner wallet address (0x…)" autocomplete="off"/>
       <div class="row">
         <button type="button" id="transferBtn" disabled>Start transfer</button>
         <button type="button" id="acceptBtn" disabled>Accept ownership</button>

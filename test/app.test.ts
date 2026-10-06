@@ -70,7 +70,7 @@ describe('gallery (mint page)', () => {
     const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description, 3)]));
     const html = await (await app.request('http://x/')).text();
     expect(html).toContain('data-mint="1"');
-    expect(html).toContain('Mint copy #4 for 8 GEAR');
+    expect(html).toContain('8 GEAR next');
     expect(html).toContain('3 copies minted');
     // Prophecy 1 is onchain now, Prophecy 2 still a preview.
     expect(html).not.toContain('href="/preview/1"');
@@ -105,7 +105,7 @@ describe('tablet and preview pages', () => {
     expect(html).toContain('Prophecy Tablet 1');
     expect(html).toContain('https://ipfs.io/ipfs/bafyabc/1.png');
     expect(html).toContain('data-mint="1"');
-    expect(html).toContain('Mint copy #1 for 1 GEAR');
+    expect(html).toContain('#1 for 1 GEAR');
   });
 
   it('404s an unpublished tablet and points to the preview', async () => {
@@ -141,7 +141,7 @@ describe('publish page', () => {
     const res = await app.request('http://x/publish');
     expect(res.status).toBe(200);
     const html = await res.text();
-    for (const id of ['connectBtn', 'keySelect', 'gateMsg', 'imageUrl', 'description', 'publishBtn', 'editTablet', 'updateBtn']) {
+    for (const id of ['keySelect', 'gateMsg', 'imageUrl', 'description', 'publishBtn', 'editTablet', 'updateBtn']) {
       expect(html).toContain(`id="${id}"`);
     }
     expect(html).toContain('https://capsmind.gearup.wtf/prophecies/1.png');
@@ -187,5 +187,25 @@ describe('shared footer with the GEAR logo', () => {
       expect(footer, path).toContain('alt="GEAR"');
       expect(footer, path).toContain('aria-label="GEAR home on landonthis.gearup.wtf"');
     }
+  });
+});
+
+describe('header wallet button', () => {
+  it('is the same toggle on every page, starting as "Connect wallet", with no Reconnect button', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description)]));
+    for (const path of ['/', '/publish', '/key', '/tablet/1', '/preview/2']) {
+      const html = await (await app.request('http://x' + path)).text();
+      expect(html, path).toContain('<button type="button" class="walletbtn" id="walletBtn"');
+      expect(html, path).toContain('>Connect wallet</button>');
+      expect(html, path).not.toContain('id="connectBtn"');
+      expect(html, path).not.toMatch(/Reconnect/);
+      expect(html, path).not.toContain('walletChip');
+    }
+  });
+
+  it('mint buttons start as "Connect wallet to mint"', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description)]));
+    const html = await (await app.request('http://x/')).text();
+    expect(html).toContain('data-mint="1">Connect wallet to mint</button>');
   });
 });

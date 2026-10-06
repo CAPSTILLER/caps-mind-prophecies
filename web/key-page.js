@@ -19414,13 +19414,13 @@ function createTransport({ key, methods, name, request, retryCount = 3, retryDel
 }
 
 // node_modules/viem/_esm/clients/transports/custom.js
-function custom(provider2, config = {}) {
+function custom(provider3, config = {}) {
   const { key = "custom", methods, name = "Custom Provider", retryDelay } = config;
   return ({ retryCount: defaultRetryCount }) => createTransport({
     key,
     methods,
     name,
-    request: provider2.request.bind(provider2),
+    request: provider3.request.bind(provider3),
     retryCount: config.retryCount ?? defaultRetryCount,
     retryDelay,
     type: "custom"
@@ -19858,7 +19858,7 @@ var CAPS_MIND_NFT = {
   /** Storage slot of the private _baseTokenURI string (ERC721 0-5, URIStorage 6, Ownable2Step 7-8, contract 9-12). */
   baseUriSlot: 12,
   /** Browser read RPCs (CORS enabled), tried in order. */
-  readRpcs: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"]
+  readRpcs: ["https://mainnet.base.org", "https://base-rpc.publicnode.com", "https://base.drpc.org", "https://1rpc.io/base"]
 };
 var capsMindNftAbi = [
   { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -19995,13 +19995,209 @@ function metadataDataUri(meta) {
   return "data:application/json;base64," + btoa(bin);
 }
 
+// src/walletCore.ts
+var REMEMBER_KEY = "capsmind.wallet.connected";
+var BASE_CHAIN_ID = 8453;
+function shortAddress(a) {
+  return a.slice(0, 6) + "\u2026" + a.slice(-4);
+}
+function walletButtonView(s) {
+  if (s.account) {
+    return {
+      label: `Connected ${shortAddress(s.account)}`,
+      connected: true,
+      title: s.chainId === BASE_CHAIN_ID ? "Tap to disconnect" : "Connected, but not on Base. Tap to disconnect."
+    };
+  }
+  if (s.busy) return { label: "Connecting\u2026", connected: false, title: "Check your wallet" };
+  return { label: "Connect wallet", connected: false, title: s.hasProvider ? "Tap to connect your wallet" : "No browser wallet found" };
+}
+var WalletController = class {
+  constructor(getProvider, store, chainId = BASE_CHAIN_ID) {
+    this.getProvider = getProvider;
+    this.store = store;
+    this.chainId = chainId;
+    this.state = { account: null, chainId: null, hasProvider: !!getProvider(), busy: false };
+  }
+  getProvider;
+  store;
+  chainId;
+  state;
+  listeners = /* @__PURE__ */ new Set();
+  subscribe(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  set(patch) {
+    this.state = { ...this.state, ...patch };
+    for (const fn of this.listeners) fn(this.state);
+  }
+  remember(on) {
+    try {
+      if (on) this.store?.setItem(REMEMBER_KEY, "1");
+      else this.store?.removeItem(REMEMBER_KEY);
+    } catch {
+    }
+  }
+  remembered() {
+    try {
+      return this.store?.getItem(REMEMBER_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  async readChain(eth) {
+    try {
+      return Number(await eth.request({ method: "eth_chainId" }));
+    } catch {
+      return null;
+    }
+  }
+  /** Restore a connection only if the visitor connected here before AND the wallet still reports the account. */
+  async init() {
+    const eth = this.getProvider();
+    this.set({ hasProvider: !!eth });
+    if (!eth) return;
+    eth.on?.("accountsChanged", (accs) => {
+      const list = accs || [];
+      if (!list[0]) {
+        this.remember(false);
+        this.set({ account: null });
+      } else if (this.state.account) {
+        this.set({ account: getAddress(list[0]) });
+      }
+    });
+    eth.on?.("chainChanged", (id) => this.set({ chainId: Number(id) }));
+    eth.on?.("disconnect", () => this.set({ account: null }));
+    const chainId = await this.readChain(eth);
+    let account2 = null;
+    if (this.remembered()) {
+      try {
+        const accs = await eth.request({ method: "eth_accounts" });
+        if (accs?.[0]) account2 = getAddress(accs[0]);
+        else this.remember(false);
+      } catch {
+      }
+    }
+    this.set({ account: account2, chainId });
+  }
+  /** Ask the wallet to connect, then make sure it is on Base. Returns true when connected on Base. */
+  async connect() {
+    const eth = this.getProvider();
+    if (!eth) throw new Error("No browser wallet found. Install or unlock Coinbase Wallet, Rabby, or MetaMask, then reload.");
+    this.set({ busy: true });
+    try {
+      const accs = await eth.request({ method: "eth_requestAccounts" });
+      const account2 = accs?.[0] ? getAddress(accs[0]) : null;
+      if (!account2) return false;
+      this.remember(true);
+      this.set({ account: account2, chainId: await this.readChain(eth) });
+      return this.ensureBase();
+    } finally {
+      this.set({ busy: false });
+    }
+  }
+  /** Forget the wallet on this site and ask the wallet to drop the site's permission where it can. */
+  async disconnect() {
+    this.remember(false);
+    this.set({ account: null });
+    const eth = this.getProvider();
+    if (!eth) return;
+    try {
+      await eth.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+    }
+  }
+  async toggle() {
+    if (this.state.account) await this.disconnect();
+    else await this.connect();
+  }
+  /** Switch (or add) Base. Returns true when the wallet is on Base. */
+  async ensureBase() {
+    const eth = this.getProvider();
+    if (!eth) return false;
+    if (this.state.chainId === this.chainId) return true;
+    const hex = "0x" + this.chainId.toString(16);
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+    } catch (err) {
+      if (err?.code === 4902) {
+        try {
+          await eth.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: hex,
+                chainName: "Base",
+                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                rpcUrls: ["https://mainnet.base.org"],
+                blockExplorerUrls: ["https://basescan.org"]
+              }
+            ]
+          });
+        } catch {
+        }
+      }
+    }
+    const chainId = await this.readChain(eth);
+    this.set({ chainId });
+    return chainId === this.chainId;
+  }
+};
+
+// web/walletUi.ts
+function provider() {
+  return window.ethereum;
+}
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+function explainWalletError(err) {
+  const e = err;
+  if (e?.code === 4001) return "You rejected the request in your wallet. Nothing was sent.";
+  if (e?.code === -32002) return "Your wallet already has a request open. Open the wallet to finish it.";
+  return e?.shortMessage || e?.message || String(err);
+}
+function initWalletUi() {
+  const wallet2 = new WalletController(provider, storage());
+  const btn = document.getElementById("walletBtn");
+  const render = () => {
+    if (!btn) return;
+    const v = walletButtonView(wallet2.state);
+    btn.textContent = v.label;
+    btn.title = v.title;
+    btn.classList.toggle("connected", v.connected);
+    btn.setAttribute("aria-pressed", v.connected ? "true" : "false");
+    btn.setAttribute("aria-label", v.connected ? `${v.label}. Tap to disconnect.` : "Connect wallet");
+    btn.disabled = wallet2.state.busy;
+  };
+  wallet2.subscribe(render);
+  render();
+  btn?.addEventListener("click", () => {
+    void wallet2.toggle().catch((e) => {
+      if (e?.code === 4001) return;
+      alert(explainWalletError(e));
+    });
+  });
+  return wallet2;
+}
+
 // web/key-page.ts
 var NFT = getAddress(CAPS_MIND_NFT.address);
 var DEFAULT_META_URI = CAPS_MIND_NFT.siteOrigin + CAPS_MIND_NFT.defaultMetadataPath;
 var pub = createPublicClient({
   chain: base,
-  transport: fallback(CAPS_MIND_NFT.readRpcs.map((u) => http(u)))
+  transport: fallback(
+    CAPS_MIND_NFT.readRpcs.map((u) => http(u, { timeout: 1e4, retryCount: 1 })),
+    { retryCount: 2 }
+  ),
+  batch: { multicall: true }
 });
+var wallet = initWalletUi();
 var state = null;
 var account = null;
 var walletChainId = null;
@@ -20030,7 +20226,7 @@ function same(a, b) {
 function addrLink(a) {
   return `<a href="${CAPS_MIND_NFT.explorer}/address/${esc(a)}" target="_blank" rel="noopener">${esc(a)}</a>`;
 }
-function provider() {
+function provider2() {
   return window.ethereum;
 }
 function ipfsToHttp(u) {
@@ -20146,8 +20342,6 @@ function renderChain() {
 }
 function renderWallet() {
   const sw = $("switchBtn");
-  const cb = $("connectBtn");
-  setText("walletChip", account ? short(account) : "Wallet disconnected");
   if (!account) {
     setText("wAddr", "Not connected");
     setText("wChain", "-");
@@ -20155,10 +20349,8 @@ function renderWallet() {
     setText("wGear", "-");
     setText("wCanMint", "-");
     if (sw) sw.style.display = "none";
-    if (cb) cb.textContent = "Connect wallet";
     return;
   }
-  if (cb) cb.textContent = "Reconnect";
   setHtml("wAddr", addrLink(account));
   const onBase = walletChainId === CAPS_MIND_NFT.chainId;
   setHtml(
@@ -20239,7 +20431,7 @@ function renderButtons() {
   let why = "";
   if (!s) why = "Loading contract state\u2026";
   else if (s.genesis) why = 'Key #1 is already minted. Use "Set tokenURI" to change its art.';
-  else if (!account) why = "Connect the owner wallet.";
+  else if (!account) why = "Connect the owner wallet with the button at the top.";
   else if (!onBase) why = "Switch your wallet to Base.";
   else if (!isOwner) why = `This wallet is not the contract owner. Connect ${short(s.owner)}.`;
   else if (walletInfo?.hasMinted) why = "This wallet has already minted a key.";
@@ -20257,10 +20449,6 @@ function renderButtons() {
   if (tr) tr.disabled = !ownerReady;
   const ac = $("acceptBtn");
   if (ac) ac.disabled = busy || !onBase || !isPending;
-  if (s && (isPending || !same(s.owner, CAPS_MIND_NFT.plannedOwner))) {
-    const d = $("ownerDetails");
-    if (d) d.open = true;
-  }
 }
 async function refreshAll() {
   try {
@@ -20277,60 +20465,15 @@ async function refreshAll() {
   await renderArt();
 }
 async function readWalletChain() {
-  const eth = provider();
-  if (!eth) return;
-  try {
-    walletChainId = Number(await eth.request({ method: "eth_chainId" }));
-  } catch {
-    walletChainId = null;
-  }
+  walletChainId = wallet.state.chainId;
 }
 async function switchToBase() {
-  const eth = provider();
-  if (!eth) return;
-  const chainId = toHex(CAPS_MIND_NFT.chainId);
-  try {
-    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
-  } catch (err) {
-    const code = err?.code;
-    if (code === 4902) {
-      await eth.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId,
-            chainName: "Base",
-            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["https://mainnet.base.org"],
-            blockExplorerUrls: [CAPS_MIND_NFT.explorer]
-          }
-        ]
-      });
-    } else {
-      showMsg("bad", "Could not switch networks: " + esc(explain(err)) + " Switch to Base in your wallet.");
-    }
-  }
-  await readWalletChain();
-}
-async function connect() {
-  const eth = provider();
-  if (!eth) {
-    showMsg("bad", "No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.");
-    return;
-  }
-  try {
-    const accounts = await eth.request({ method: "eth_requestAccounts" });
-    account = accounts[0] ? getAddress(accounts[0]) : null;
-    await readWalletChain();
-    if (walletChainId !== CAPS_MIND_NFT.chainId) await switchToBase();
-    await refreshAll();
-  } catch (e) {
-    showMsg("bad", esc(explain(e)));
-  }
+  await wallet.ensureBase();
+  walletChainId = wallet.state.chainId;
 }
 async function send(fn, args, label) {
-  const eth = provider();
-  if (!eth || !account) return showMsg("bad", "Connect your wallet first.");
+  const eth = provider2();
+  if (!eth || !account) return showMsg("bad", "Tap Connect wallet at the top first.");
   await readWalletChain();
   if (walletChainId !== CAPS_MIND_NFT.chainId) {
     await switchToBase();
@@ -20348,8 +20491,8 @@ async function send(fn, args, label) {
       account
     });
     showMsg("info", `Confirm "${esc(label)}" in your wallet. On a Ledger, approve it on the device.`);
-    const wallet = createWalletClient({ account, chain: base, transport: custom(eth) });
-    const hash3 = await wallet.writeContract(request);
+    const wallet2 = createWalletClient({ account, chain: base, transport: custom(eth) });
+    const hash3 = await wallet2.writeContract(request);
     const link = `<a href="${CAPS_MIND_NFT.explorer}/tx/${hash3}" target="_blank" rel="noopener">${short(hash3)}</a>`;
     showMsg("info", `Sent ${link}. Waiting for Base to confirm\u2026`);
     const receipt = await pub.waitForTransactionReceipt({ hash: hash3 });
@@ -20385,7 +20528,6 @@ async function boot() {
     baseMeta = { name: j.name || baseMeta.name, description: j.description || baseMeta.description };
   } catch {
   }
-  $("connectBtn")?.addEventListener("click", () => void connect());
   $("switchBtn")?.addEventListener("click", async () => {
     await switchToBase();
     renderWallet();
@@ -20423,24 +20565,20 @@ async function boot() {
     void send("transferOwnership", [getAddress(v)], `Start ownership transfer to ${short(v)}`);
   });
   $("acceptBtn")?.addEventListener("click", () => void send("acceptOwnership", [], "Accept ownership"));
-  const eth = provider();
-  if (eth) {
-    eth.on?.("accountsChanged", (accs) => {
-      const list = accs;
-      account = list?.[0] ? getAddress(list[0]) : null;
+  let lastKey = "";
+  wallet.subscribe((st) => {
+    account = st.account;
+    walletChainId = st.chainId;
+    const key = `${account}|${walletChainId}`;
+    if (key !== lastKey) {
+      lastKey = key;
       void refreshAll();
-    });
-    eth.on?.("chainChanged", (id) => {
-      walletChainId = Number(id);
-      void refreshAll();
-    });
-    try {
-      const accs = await eth.request({ method: "eth_accounts" });
-      if (accs[0]) account = getAddress(accs[0]);
-    } catch {
     }
-    await readWalletChain();
-  }
+  });
+  await wallet.init();
+  lastKey = `${wallet.state.account}|${wallet.state.chainId}`;
+  account = wallet.state.account;
+  walletChainId = wallet.state.chainId;
   await refreshAll();
 }
 void boot();

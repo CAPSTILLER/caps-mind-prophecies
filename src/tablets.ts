@@ -21,8 +21,8 @@ export const TABLETS = {
   maxImageUriBytes: 1024,
   maxDescriptionBytes: 2048,
   siteOrigin: 'https://capsmind.gearup.wtf',
-  /** Read RPCs with CORS, tried in order (browser and server). */
-  readRpcs: ['https://base-rpc.publicnode.com', 'https://mainnet.base.org'],
+  /** Public Base read RPCs with CORS, tried in order (browser and server). Each one rate limits on its own. */
+  readRpcs: ['https://mainnet.base.org', 'https://base-rpc.publicnode.com', 'https://base.drpc.org', 'https://1rpc.io/base'],
   ipfsGateway: 'https://ipfs.io/ipfs/',
 } as const;
 

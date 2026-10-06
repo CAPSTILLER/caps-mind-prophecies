@@ -35,6 +35,16 @@ describe('CAPs Mind key owner page', () => {
     expect(js).not.toMatch(/Heads up/);
   });
 
+  it('ownership transfer starts collapsed with an empty new-owner field', async () => {
+    const html = await (await app.request('http://x/key')).text();
+    expect(html).toMatch(/<details style="margin-top:12px" id="ownerDetails">/);
+    expect(html).not.toMatch(/id="ownerDetails"[^>]*\bopen\b/);
+    expect(html).toContain('<input id="newOwnerIn" value=""');
+    expect(html).not.toContain('0x6C05149910C2dd102032E44b96DA36988950B257');
+    const js = await readFile('web/key-page.js', 'utf8');
+    expect(js).not.toMatch(/ownerDetails[^;]*\.open\s*=\s*true/);
+  });
+
   it('redirects /owner to /key', async () => {
     const res = await app.request('http://x/owner');
     expect(res.status).toBe(302);

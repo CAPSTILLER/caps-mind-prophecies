@@ -60,14 +60,13 @@ select { width:100%; border-radius:10px; border:1px solid var(--line); backgroun
 
 function tabletCard(t: Tablet): string {
   const img = escapeHtml(displayImageUrl(t.imageURI));
-  const nextSerial = t.minted + 1;
   return `<div class="card" data-tablet-card="${t.id}">
   <a class="shotlink" href="/tablet/${t.id}"><img class="shot" src="${img}" alt="Prophecy Tablet ${t.id}" loading="lazy"/></a>
   <div class="body">
     <div class="meta"><span class="title">Tablet #${t.id}</span><span class="badge live">Onchain</span></div>
     <div class="desc">${escapeHtml(t.description)}</div>
     <div class="meta"><span data-minted="${t.id}">${t.minted} ${t.minted === 1 ? 'copy' : 'copies'} minted</span><span data-price="${t.id}">${t.nextPriceWholeGear} GEAR next</span></div>
-    <button type="button" class="primary" data-mint="${t.id}">Mint copy #${nextSerial} for ${t.nextPriceWholeGear} GEAR</button>
+    <button type="button" class="primary" data-mint="${t.id}">Connect wallet to mint</button>
     <div class="msg" data-mint-msg="${t.id}"></div>
     <div class="meta"><a href="/tablet/${t.id}">Details</a><span></span></div>
   </div>
@@ -100,8 +99,7 @@ function copyLookup(): string {
 
 function connectBar(): string {
   return `<div class="row" style="margin-top:0;margin-bottom:14px">
-  <button type="button" id="connectBtn" class="primary">Connect wallet</button>
-  <span class="meta" id="walletLine">Connect a wallet on Base to mint. You pay in GEAR.</span>
+  <span class="meta" id="walletLine">Use the wallet button at the top to connect on Base. You pay in GEAR.</span>
 </div>`;
 }
 
@@ -124,7 +122,7 @@ export function galleryBody(state: TabletsState | null, readError: string | null
 <div class="grid">${pending.map(previewCard).join('')}</div>`
     : '';
   return `${TABLET_STYLES}
-<div class="banner"><b>CAPs Mind Prophecy Tablets on Base.</b> Contract ${contract}. Each tablet has its own price curve: copy 1 costs 1 GEAR, copy 2 costs 2, then 4, 8 and so on, capped at ${T.maxPriceGear} GEAR. Minting asks your wallet for two signatures: approve the exact GEAR price, then mint.</div>
+<div class="banner"><b>CAPs Mind Prophecy Tablets on Base.</b> Contract ${contract}. Each tablet has its own price curve: copy 1 costs 1 GEAR, copy 2 costs 2, then 4, 8 and so on, capped at ${T.maxPriceGear} GEAR. Minting takes two taps: Approve (the exact GEAR price), then Mint once Base confirms the approval.</div>
 ${notice}
 ${connectBar()}
 <section>
@@ -167,8 +165,7 @@ ${paused}
     ${t.updatedAt && t.updatedAt !== t.publishedAt ? `<div class="kv"><span>Last edited</span><span>${day(t.updatedAt)}</span></div>` : ''}
     <div class="kv"><span>Image link</span><span class="mono">${escapeHtml(t.imageURI)}</span></div>
     <div class="row">
-      <button type="button" id="connectBtn">Connect wallet</button>
-      <button type="button" class="primary" data-mint="${t.id}">Mint copy #${t.minted + 1} for ${t.nextPriceWholeGear} GEAR</button>
+      <button type="button" class="primary" data-mint="${t.id}">Connect wallet to mint</button>
     </div>
     <span class="meta" id="walletLine"></span>
     <div class="msg" data-mint-msg="${t.id}"></div>
@@ -228,8 +225,8 @@ export function publishBody(opts: { blobUpload: boolean }): string {
 <section class="split">
   <div class="panel">
     <h2 style="margin:0 0 6px;font-size:16px">1. Wallet and key</h2>
+    <p class="note" style="margin-top:0">Use the wallet button at the top to connect or disconnect.</p>
     <div class="row" style="margin-top:0">
-      <button type="button" id="connectBtn" class="primary">Connect wallet</button>
       <button type="button" id="switchBtn" style="display:none">Switch to Base</button>
     </div>
     <div class="kv"><span>Connected</span><span class="mono" id="pubAddr">Not connected</span></div>
@@ -238,7 +235,7 @@ export function publishBody(opts: { blobUpload: boolean }): string {
     <div class="kv"><span>Tablets onchain</span><span id="pubCount">Checking…</span></div>
     <label for="keySelect">CAPs Mind key to use</label>
     <select id="keySelect" disabled><option value="">Connect a wallet first</option></select>
-    <div class="msg show" id="gateMsg">Connect a wallet that holds a CAPs Mind key.</div>
+    <div class="msg show" id="gateMsg">Tap Connect wallet at the top and pick the wallet that holds your CAPs Mind key.</div>
   </div>
 
   <div class="panel">

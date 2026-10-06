@@ -23,7 +23,7 @@ export const CAPS_MIND_NFT = {
   /** Storage slot of the private _baseTokenURI string (ERC721 0-5, URIStorage 6, Ownable2Step 7-8, contract 9-12). */
   baseUriSlot: 12,
   /** Browser read RPCs (CORS enabled), tried in order. */
-  readRpcs: ['https://base-rpc.publicnode.com', 'https://mainnet.base.org'],
+  readRpcs: ['https://mainnet.base.org', 'https://base-rpc.publicnode.com', 'https://base.drpc.org', 'https://1rpc.io/base'],
 } as const;
 
 export const capsMindNftAbi = [
