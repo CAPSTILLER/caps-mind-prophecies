@@ -28,11 +28,6 @@ import {
 } from '../src/capsMindNft.js';
 import { initWalletUi } from './walletUi.js';
 
-type Eip1193 = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, cb: (...args: unknown[]) => void) => void;
-};
-
 const NFT = getAddress(C.address);
 const DEFAULT_META_URI = C.siteOrigin + C.defaultMetadataPath;
 const pub = createPublicClient({
@@ -85,9 +80,6 @@ function same(a?: string | null, b?: string | null) {
 }
 function addrLink(a: string) {
   return `<a href="${C.explorer}/address/${esc(a)}" target="_blank" rel="noopener">${esc(a)}</a>`;
-}
-function provider(): Eip1193 | undefined {
-  return (window as unknown as { ethereum?: Eip1193 }).ethereum;
 }
 function ipfsToHttp(u: string) {
   return u.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + u.slice(7).replace(/^ipfs\//, '') : u;
@@ -360,7 +352,7 @@ type WriteFn = 'ownerGenesisMint' | 'setTokenURI' | 'setBaseURI' | 'transferOwne
 
 /** Simulate first (catches reverts before signing), then ask the wallet to sign and wait for the receipt. */
 async function send(fn: WriteFn, args: readonly unknown[], label: string) {
-  const eth = provider();
+  const eth = wallet.provider();
   if (!eth || !account) return showMsg('bad', 'Tap Connect wallet at the top first.');
   await readWalletChain();
   if (walletChainId !== C.chainId) {

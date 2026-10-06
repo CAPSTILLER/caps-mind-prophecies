@@ -1,12 +1,14 @@
 /**
  * Wallet connection shared by every page (header toggle button). No DOM here so it can be tested
- * with a fake EIP-1193 wallet. web/walletUi.ts wires it to the header button.
+ * with a fake EIP-1193 wallet. web/walletUi.ts wires it to the header button and loads Coinbase
+ * Smart Wallet when the phone browser has no injected ethereum.
  */
 import { getAddress, type Address } from 'viem';
 
 export type Eip1193 = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, cb: (...args: unknown[]) => void) => void;
+  disconnect?: () => Promise<void>;
 };
 
 export type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -14,8 +16,17 @@ export type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export type WalletState = {
   account: Address | null;
   chainId: number | null;
+  /** True when Connect can open a wallet (injected or Coinbase Smart Wallet from the browser). */
   hasProvider: boolean;
   busy: boolean;
+};
+
+/** How the page finds an EIP-1193 provider. Prefer injected; otherwise Coinbase Smart Wallet. */
+export type ProviderSource = {
+  /** Sync: injected window.ethereum, or a Smart Wallet provider already loaded this session. */
+  peek: () => Eip1193 | undefined;
+  /** Prefer injected; otherwise load @coinbase/wallet-sdk with preference smartWalletOnly. */
+  resolve: () => Promise<Eip1193>;
 };
 
 /** Set when the visitor connects on this site; cleared when they tap the button to disconnect. */
@@ -36,19 +47,27 @@ export function walletButtonView(s: WalletState): { label: string; connected: bo
     };
   }
   if (s.busy) return { label: 'Connecting…', connected: false, title: 'Check your wallet' };
-  return { label: 'Connect wallet', connected: false, title: s.hasProvider ? 'Tap to connect your wallet' : 'No browser wallet found' };
+  return { label: 'Connect wallet', connected: false, title: 'Tap to connect your wallet' };
 }
 
 export class WalletController {
   state: WalletState;
   private listeners = new Set<(s: WalletState) => void>();
+  private active: Eip1193 | undefined;
+  private eventsWired = false;
 
   constructor(
-    private getProvider: () => Eip1193 | undefined,
+    private providers: ProviderSource,
     private store: KeyValueStore | null,
     private chainId = BASE_CHAIN_ID,
   ) {
-    this.state = { account: null, chainId: null, hasProvider: !!getProvider(), busy: false };
+    // Connect always can try Smart Wallet from the browser, even with no injected ethereum.
+    this.state = { account: null, chainId: null, hasProvider: true, busy: false };
+  }
+
+  /** EIP-1193 provider last used for connect (injected or Smart Wallet). Use this for writes. */
+  provider(): Eip1193 | undefined {
+    return this.active || this.providers.peek();
   }
 
   subscribe(fn: (s: WalletState) => void): () => void {
@@ -86,12 +105,10 @@ export class WalletController {
     }
   }
 
-  /** Restore a connection only if the visitor connected here before AND the wallet still reports the account. */
-  async init(): Promise<void> {
-    const eth = this.getProvider();
-    this.set({ hasProvider: !!eth });
-    if (!eth) return;
-    eth.on?.('accountsChanged', (accs: unknown) => {
+  private wireEvents(eth: Eip1193) {
+    if (this.eventsWired || typeof eth.on !== 'function') return;
+    this.eventsWired = true;
+    eth.on('accountsChanged', (accs: unknown) => {
       const list = (accs as string[]) || [];
       if (!list[0]) {
         this.remember(false);
@@ -100,15 +117,48 @@ export class WalletController {
         this.set({ account: getAddress(list[0]) });
       }
     });
-    eth.on?.('chainChanged', (id: unknown) => this.set({ chainId: Number(id) }));
-    eth.on?.('disconnect', () => this.set({ account: null }));
-    const chainId = await this.readChain(eth);
+    eth.on('chainChanged', (id: unknown) => this.set({ chainId: Number(id) }));
+    eth.on('disconnect', () => {
+      this.remember(false);
+      this.set({ account: null });
+    });
+  }
+
+  /**
+   * Restore a connection only if the visitor connected here before AND the wallet still reports
+   * the account. Never calls eth_chainId / switch before eth_accounts (Smart Wallet rejects that).
+   * Does not load the Smart Wallet SDK unless the visit is remembered.
+   */
+  async init(): Promise<void> {
+    this.set({ hasProvider: true });
+    let eth = this.providers.peek();
+    if (!eth && this.remembered()) {
+      try {
+        eth = await this.providers.resolve();
+      } catch {
+        /* SDK blocked or offline; visitor can still tap Connect later */
+      }
+    }
+    if (!eth) {
+      this.set({ account: null, chainId: null });
+      return;
+    }
+    this.active = eth;
+    this.wireEvents(eth);
+
     let account: Address | null = null;
+    let chainId: number | null = null;
     if (this.remembered()) {
       try {
+        // Passive only: eth_accounts must not open a popup.
         const accs = (await eth.request({ method: 'eth_accounts' })) as string[];
-        if (accs?.[0]) account = getAddress(accs[0]);
-        else this.remember(false);
+        if (accs?.[0]) {
+          account = getAddress(accs[0]);
+          // Chain read only after we know accounts exist (Smart Wallet safe).
+          chainId = await this.readChain(eth);
+        } else {
+          this.remember(false);
+        }
       } catch {
         /* wallet locked */
       }
@@ -116,17 +166,21 @@ export class WalletController {
     this.set({ account, chainId });
   }
 
-  /** Ask the wallet to connect, then make sure it is on Base. Returns true when connected on Base. */
+  /**
+   * Ask the wallet to connect, then make sure it is on Base.
+   * Coinbase Smart Wallet: eth_requestAccounts MUST be first; never eth_chainId/switch before it.
+   */
   async connect(): Promise<boolean> {
-    const eth = this.getProvider();
-    if (!eth) throw new Error('No browser wallet found. Install or unlock Coinbase Wallet, Rabby, or MetaMask, then reload.');
     this.set({ busy: true });
     try {
+      const eth = await this.providers.resolve();
+      this.active = eth;
+      this.wireEvents(eth);
       const accs = (await eth.request({ method: 'eth_requestAccounts' })) as string[];
       const account = accs?.[0] ? getAddress(accs[0]) : null;
       if (!account) return false;
       this.remember(true);
-      this.set({ account, chainId: await this.readChain(eth) });
+      this.set({ account });
       return this.ensureBase();
     } finally {
       this.set({ busy: false });
@@ -137,12 +191,17 @@ export class WalletController {
   async disconnect(): Promise<void> {
     this.remember(false);
     this.set({ account: null });
-    const eth = this.getProvider();
+    const eth = this.provider();
     if (!eth) return;
     try {
       await eth.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] });
     } catch {
       /* not supported by every wallet; the site has already forgotten the account */
+    }
+    try {
+      if (typeof eth.disconnect === 'function') await eth.disconnect();
+    } catch {
+      /* optional on Smart Wallet */
     }
   }
 
@@ -151,11 +210,17 @@ export class WalletController {
     else await this.connect();
   }
 
-  /** Switch (or add) Base. Returns true when the wallet is on Base. */
+  /**
+   * Switch (or add) Base. Returns true when the wallet is on Base.
+   * Only call after eth_requestAccounts (or eth_accounts already returned an address).
+   */
   async ensureBase(): Promise<boolean> {
-    const eth = this.getProvider();
+    const eth = this.provider();
     if (!eth) return false;
-    if (this.state.chainId === this.chainId) return true;
+    // Safe to read chain here: caller already did eth_requestAccounts or eth_accounts returned an address.
+    let chainId = this.state.chainId ?? (await this.readChain(eth));
+    if (chainId !== null) this.set({ chainId });
+    if (chainId === this.chainId) return true;
     const hex = '0x' + this.chainId.toString(16);
     try {
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] });
@@ -179,7 +244,7 @@ export class WalletController {
         }
       }
     }
-    const chainId = await this.readChain(eth);
+    chainId = await this.readChain(eth);
     this.set({ chainId });
     return chainId === this.chainId;
   }

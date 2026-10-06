@@ -31,7 +31,6 @@ import {
   type Tablet,
 } from '../src/tablets.js';
 import { MintFlow, type MintDeps, type MintView } from '../src/mintFlow.js';
-import type { Eip1193 } from '../src/walletCore.js';
 import { initWalletUi } from './walletUi.js';
 
 type PageInfo = { page: 'gallery' | 'tablet' | 'publish'; id?: number; blobUpload?: boolean };
@@ -89,9 +88,6 @@ function showMsg(el: HTMLElement | null, kind: 'ok' | 'bad' | 'info', html: stri
   el.className = 'msg show' + (kind === 'info' ? '' : ' ' + kind);
   el.innerHTML = html;
 }
-function provider(): Eip1193 | undefined {
-  return (window as unknown as { ethereum?: Eip1193 }).ethereum;
-}
 function gear(raw: bigint) {
   return Number(formatUnits(raw, T.gearDecimals)).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
@@ -142,7 +138,7 @@ async function ensureReady(msgEl: HTMLElement | null): Promise<boolean> {
 }
 
 function walletClient() {
-  const eth = provider();
+  const eth = wallet.provider();
   if (!eth || !account) throw new Error('Connect your wallet first.');
   return createWalletClient({ account, chain: base, transport: custom(eth) });
 }
@@ -394,7 +390,6 @@ function selectedKey(): KeyRow | null {
 /** Why publishing or editing is blocked right now, or null if the wallet can go ahead. */
 function gateReason(): string | null {
   const s = pubState;
-  if (!provider()) return 'No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.';
   if (!account) return 'Tap Connect wallet at the top and pick the wallet that holds your CAPs Mind key.';
   if (walletChainId !== T.chainId) return 'Your wallet is on the wrong network. Switch to Base.';
   if (!s) return 'Reading Base…';
@@ -457,7 +452,7 @@ function renderPublish() {
   const why = gateReason();
   const gate = $('gateMsg');
   const key = selectedKey();
-  const neutral = !s || (!account && !!provider());
+  const neutral = !s || !account;
   if (why) showMsg(gate, neutral ? 'info' : 'bad', esc(why));
   else showMsg(gate, 'ok', `CAPs Mind key #${key!.id} is ready. You can publish and edit tablets.`);
 

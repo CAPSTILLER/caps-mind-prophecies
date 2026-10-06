@@ -19414,13 +19414,13 @@ function createTransport({ key, methods, name, request, retryCount = 3, retryDel
 }
 
 // node_modules/viem/_esm/clients/transports/custom.js
-function custom(provider3, config = {}) {
+function custom(provider, config = {}) {
   const { key = "custom", methods, name = "Custom Provider", retryDelay } = config;
   return ({ retryCount: defaultRetryCount }) => createTransport({
     key,
     methods,
     name,
-    request: provider3.request.bind(provider3),
+    request: provider.request.bind(provider),
     retryCount: config.retryCount ?? defaultRetryCount,
     retryDelay,
     type: "custom"
@@ -20010,20 +20010,26 @@ function walletButtonView(s) {
     };
   }
   if (s.busy) return { label: "Connecting\u2026", connected: false, title: "Check your wallet" };
-  return { label: "Connect wallet", connected: false, title: s.hasProvider ? "Tap to connect your wallet" : "No browser wallet found" };
+  return { label: "Connect wallet", connected: false, title: "Tap to connect your wallet" };
 }
 var WalletController = class {
-  constructor(getProvider, store, chainId = BASE_CHAIN_ID) {
-    this.getProvider = getProvider;
+  constructor(providers, store, chainId = BASE_CHAIN_ID) {
+    this.providers = providers;
     this.store = store;
     this.chainId = chainId;
-    this.state = { account: null, chainId: null, hasProvider: !!getProvider(), busy: false };
+    this.state = { account: null, chainId: null, hasProvider: true, busy: false };
   }
-  getProvider;
+  providers;
   store;
   chainId;
   state;
   listeners = /* @__PURE__ */ new Set();
+  active;
+  eventsWired = false;
+  /** EIP-1193 provider last used for connect (injected or Smart Wallet). Use this for writes. */
+  provider() {
+    return this.active || this.providers.peek();
+  }
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -20053,12 +20059,10 @@ var WalletController = class {
       return null;
     }
   }
-  /** Restore a connection only if the visitor connected here before AND the wallet still reports the account. */
-  async init() {
-    const eth = this.getProvider();
-    this.set({ hasProvider: !!eth });
-    if (!eth) return;
-    eth.on?.("accountsChanged", (accs) => {
+  wireEvents(eth) {
+    if (this.eventsWired || typeof eth.on !== "function") return;
+    this.eventsWired = true;
+    eth.on("accountsChanged", (accs) => {
       const list = accs || [];
       if (!list[0]) {
         this.remember(false);
@@ -20067,31 +20071,63 @@ var WalletController = class {
         this.set({ account: getAddress(list[0]) });
       }
     });
-    eth.on?.("chainChanged", (id) => this.set({ chainId: Number(id) }));
-    eth.on?.("disconnect", () => this.set({ account: null }));
-    const chainId = await this.readChain(eth);
+    eth.on("chainChanged", (id) => this.set({ chainId: Number(id) }));
+    eth.on("disconnect", () => {
+      this.remember(false);
+      this.set({ account: null });
+    });
+  }
+  /**
+   * Restore a connection only if the visitor connected here before AND the wallet still reports
+   * the account. Never calls eth_chainId / switch before eth_accounts (Smart Wallet rejects that).
+   * Does not load the Smart Wallet SDK unless the visit is remembered.
+   */
+  async init() {
+    this.set({ hasProvider: true });
+    let eth = this.providers.peek();
+    if (!eth && this.remembered()) {
+      try {
+        eth = await this.providers.resolve();
+      } catch {
+      }
+    }
+    if (!eth) {
+      this.set({ account: null, chainId: null });
+      return;
+    }
+    this.active = eth;
+    this.wireEvents(eth);
     let account2 = null;
+    let chainId = null;
     if (this.remembered()) {
       try {
         const accs = await eth.request({ method: "eth_accounts" });
-        if (accs?.[0]) account2 = getAddress(accs[0]);
-        else this.remember(false);
+        if (accs?.[0]) {
+          account2 = getAddress(accs[0]);
+          chainId = await this.readChain(eth);
+        } else {
+          this.remember(false);
+        }
       } catch {
       }
     }
     this.set({ account: account2, chainId });
   }
-  /** Ask the wallet to connect, then make sure it is on Base. Returns true when connected on Base. */
+  /**
+   * Ask the wallet to connect, then make sure it is on Base.
+   * Coinbase Smart Wallet: eth_requestAccounts MUST be first; never eth_chainId/switch before it.
+   */
   async connect() {
-    const eth = this.getProvider();
-    if (!eth) throw new Error("No browser wallet found. Install or unlock Coinbase Wallet, Rabby, or MetaMask, then reload.");
     this.set({ busy: true });
     try {
+      const eth = await this.providers.resolve();
+      this.active = eth;
+      this.wireEvents(eth);
       const accs = await eth.request({ method: "eth_requestAccounts" });
       const account2 = accs?.[0] ? getAddress(accs[0]) : null;
       if (!account2) return false;
       this.remember(true);
-      this.set({ account: account2, chainId: await this.readChain(eth) });
+      this.set({ account: account2 });
       return this.ensureBase();
     } finally {
       this.set({ busy: false });
@@ -20101,10 +20137,14 @@ var WalletController = class {
   async disconnect() {
     this.remember(false);
     this.set({ account: null });
-    const eth = this.getProvider();
+    const eth = this.provider();
     if (!eth) return;
     try {
       await eth.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+    }
+    try {
+      if (typeof eth.disconnect === "function") await eth.disconnect();
     } catch {
     }
   }
@@ -20112,11 +20152,16 @@ var WalletController = class {
     if (this.state.account) await this.disconnect();
     else await this.connect();
   }
-  /** Switch (or add) Base. Returns true when the wallet is on Base. */
+  /**
+   * Switch (or add) Base. Returns true when the wallet is on Base.
+   * Only call after eth_requestAccounts (or eth_accounts already returned an address).
+   */
   async ensureBase() {
-    const eth = this.getProvider();
+    const eth = this.provider();
     if (!eth) return false;
-    if (this.state.chainId === this.chainId) return true;
+    let chainId = this.state.chainId ?? await this.readChain(eth);
+    if (chainId !== null) this.set({ chainId });
+    if (chainId === this.chainId) return true;
     const hex = "0x" + this.chainId.toString(16);
     try {
       await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
@@ -20139,15 +20184,49 @@ var WalletController = class {
         }
       }
     }
-    const chainId = await this.readChain(eth);
+    chainId = await this.readChain(eth);
     this.set({ chainId });
     return chainId === this.chainId;
   }
 };
 
 // web/walletUi.ts
-function provider() {
+var CB_SDK_URL = "https://cdn.jsdelivr.net/npm/@coinbase/wallet-sdk@4.4.0/+esm";
+var APP_NAME = "CAPs Mind Prophecies";
+var APP_LOGO_URL = "https://capsmind.gearup.wtf/favicon-32.png";
+var cbSdkProvider;
+function hasInjectedEthereum() {
+  const eth = window.ethereum;
+  return !!(eth && typeof eth.request === "function");
+}
+function injected() {
+  if (!hasInjectedEthereum()) return void 0;
   return window.ethereum;
+}
+async function getCoinbaseSmartProvider() {
+  if (cbSdkProvider) return cbSdkProvider;
+  const url = CB_SDK_URL;
+  const mod2 = await import(url);
+  const create2 = mod2.createCoinbaseWalletSDK || mod2.default?.createCoinbaseWalletSDK;
+  if (!create2) throw new Error("Coinbase Wallet SDK failed to load. Check your connection and try again.");
+  const sdk = create2({
+    appName: APP_NAME,
+    appLogoUrl: APP_LOGO_URL,
+    appChainIds: [8453],
+    preference: { options: "smartWalletOnly" }
+  });
+  cbSdkProvider = sdk.getProvider();
+  return cbSdkProvider;
+}
+function browserProviders() {
+  return {
+    peek: () => injected() || cbSdkProvider,
+    resolve: async () => {
+      const inj = injected();
+      if (inj) return inj;
+      return getCoinbaseSmartProvider();
+    }
+  };
 }
 function storage() {
   try {
@@ -20163,7 +20242,7 @@ function explainWalletError(err) {
   return e?.shortMessage || e?.message || String(err);
 }
 function initWalletUi() {
-  const wallet2 = new WalletController(provider, storage());
+  const wallet2 = new WalletController(browserProviders(), storage());
   const btn = document.getElementById("walletBtn");
   const render = () => {
     if (!btn) return;
@@ -20225,9 +20304,6 @@ function same(a, b) {
 }
 function addrLink(a) {
   return `<a href="${CAPS_MIND_NFT.explorer}/address/${esc(a)}" target="_blank" rel="noopener">${esc(a)}</a>`;
-}
-function provider2() {
-  return window.ethereum;
 }
 function ipfsToHttp(u) {
   return u.startsWith("ipfs://") ? "https://ipfs.io/ipfs/" + u.slice(7).replace(/^ipfs\//, "") : u;
@@ -20472,7 +20548,7 @@ async function switchToBase() {
   walletChainId = wallet.state.chainId;
 }
 async function send(fn, args, label) {
-  const eth = provider2();
+  const eth = wallet.provider();
   if (!eth || !account) return showMsg("bad", "Tap Connect wallet at the top first.");
   await readWalletChain();
   if (walletChainId !== CAPS_MIND_NFT.chainId) {
