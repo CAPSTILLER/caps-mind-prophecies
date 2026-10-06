@@ -1,6 +1,6 @@
 # CAPs Mind Prophecies
 
-Vault 42 prophecy tablets. Cap publishes with an **eligible CAPs Mind Key** NFT. Anyone mints editions by paying **GEAR** on a bonding curve.
+Vault prophecy tablets. Cap publishes with an **eligible CAPs Mind Key** NFT. Anyone mints editions by paying **GEAR** on a bonding curve.
 
 Live on Base mainnet:
 

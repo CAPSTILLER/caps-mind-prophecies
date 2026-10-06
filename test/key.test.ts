@@ -23,7 +23,7 @@ describe('CAPs Mind key owner page', () => {
     expect(html).toContain('/key/caps-mind-key.jpg');
     expect(html).toContain('/key-page.js');
     expect(html).not.toContain('src="/app.js"');
-    expect(html).not.toContain('\u2014');
+    expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
   });
 
   it('redirects /owner to /key', async () => {

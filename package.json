@@ -2,7 +2,7 @@
   "name": "caps-mind-prophecies",
   "version": "0.1.0",
   "private": true,
-  "description": "CAPs Mind Prophecies: Vault 42 tablets. Publisher key NFT gate. GEAR bonding mint.",
+  "description": "CAPs Mind Prophecies: Vault prophecy tablets. Publisher key NFT gate. GEAR bonding mint.",
   "type": "module",
   "scripts": {
     "test": "vitest run",

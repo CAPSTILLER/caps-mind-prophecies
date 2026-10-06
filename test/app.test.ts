@@ -63,7 +63,7 @@ describe('gallery (mint page)', () => {
     expect(html).toContain('based enough to call it home');
     expect(html).toContain(TABLETS.address.slice(0, 6));
     expect(html).not.toContain('data-mint=');
-    expect(html).not.toContain('\u2014');
+    expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
   });
 
   it('lists onchain tablets with mint buttons and hides previews already published', async () => {
@@ -150,7 +150,7 @@ describe('publish page', () => {
     expect(html).toContain('data-fill="2"');
     expect(html).toContain('shall never B blown');
     expect(html).toContain('src="/app.js"');
-    expect(html).not.toContain('\u2014');
+    expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
     // No upload box without Vercel Blob.
     expect(html).not.toContain('id="imageFile"');
   });
