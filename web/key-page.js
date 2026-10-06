@@ -20127,15 +20127,6 @@ function renderChain() {
   setHtml("stGenesis", s.genesis ? '<span class="ok">Yes</span>' : "Not yet");
   setText("stTotal", s.total.toString());
   setHtml("stBase", s.baseUri ? `<span class="bad">${esc(s.baseUri)}</span>` : '<span class="ok">Empty (good)</span>');
-  const warn = $("ownerWarn");
-  if (warn) {
-    if (!same(s.owner, CAPS_MIND_NFT.plannedOwner)) {
-      warn.style.display = "";
-      warn.innerHTML = `<b>Heads up: the owner is not your planned wallet.</b> The contract owner on chain is <span class="mono">${esc(s.owner)}</span>, not <span class="mono">${esc(CAPS_MIND_NFT.plannedOwner)}</span>. Only the owner can mint key #1 and change images. Either connect the owner wallet and mint from it, or use "Contract ownership" below to move ownership to your planned wallet first (the new wallet then has to accept).`;
-    } else {
-      warn.style.display = "none";
-    }
-  }
   const t1 = $("stToken1");
   if (t1) t1.style.display = s.total >= 1n ? "" : "none";
   if (s.total >= 1n && s.token1Owner && s.token1Uri !== null) {

@@ -13,6 +13,11 @@ export function page(
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${escapeHtml(title)} · CAPs Mind Prophecies</title>
 <meta name="description" content="Vault prophecy tablets from CAPs mind on Base. Mint numbered copies with GEAR."/>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<meta property="og:title" content="CAPs Mind Prophecies"/>
+<meta property="og:image" content="https://capsmind.gearup.wtf/og.jpg"/>
 <style>
 :root {
   --bg:#07090f; --panel:#101522; --line:#243049; --text:#e8eefc; --dim:#8b9bb8;
@@ -93,6 +98,10 @@ textarea { min-height:140px; resize:vertical; text-transform:uppercase; letter-s
 .ok { color:var(--ok); } .bad { color:var(--bad); }
 .empty { color:var(--dim); text-align:center; padding:48px 12px; border:1px dashed var(--line); border-radius:16px; }
 footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 40px; }
+footer .gear-logo-link { display:inline-block; vertical-align:middle; line-height:0; opacity:.9; transition:opacity .15s ease; }
+footer .gear-logo-link:hover, footer .gear-logo-link:focus-visible { opacity:1; }
+footer .gear-logo-link:active { opacity:.7; }
+footer .gear-logo-link img { height:1.35em; width:auto; display:block; image-rendering:pixelated; position:relative; top:-1px; }
 </style>
 </head>
 <body>
@@ -108,11 +117,18 @@ footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 
 <main>
 ${body}
 </main>
-<footer>doubles at every mint, 1000 cap, gear only—you pay gas. 90%-treasury 10%-gearvault.</footer>
+<footer>doubles at every mint, 1000 cap, ${GEAR_LOGO_LINK} only—you pay gas. 90%-treasury 10%-gearvault.</footer>
 <script type="module" src="${escapeHtml(script)}"></script>
 </body>
 </html>`;
 }
+
+/**
+ * Cap's GEAR logo (his own pixel art, gear-logo-cutout.png from CAPSTILLER/gear-basescan-logo),
+ * linking to the Gear home the same way his other Gear apps do.
+ */
+export const GEAR_HOME_URL = 'https://landonthis.gearup.wtf';
+export const GEAR_LOGO_LINK = `<a class="gear-logo-link" href="${GEAR_HOME_URL}" target="_blank" rel="noopener noreferrer" aria-label="GEAR home on landonthis.gearup.wtf" title="GEAR"><img src="/gear-logo-cutout.png" alt="GEAR" width="512" height="128"/></a>`;
 
 export function escapeHtml(s: string): string {
   return s

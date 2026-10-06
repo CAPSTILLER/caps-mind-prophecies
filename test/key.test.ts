@@ -26,6 +26,15 @@ describe('CAPs Mind key owner page', () => {
     expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
   });
 
+  it('has no owner "heads up" warning box', async () => {
+    const html = await (await app.request('http://x/key')).text();
+    expect(html).not.toContain('ownerWarn');
+    expect(html).not.toMatch(/heads up/i);
+    const js = await readFile('web/key-page.js', 'utf8');
+    expect(js).not.toContain('ownerWarn');
+    expect(js).not.toMatch(/Heads up/);
+  });
+
   it('redirects /owner to /key', async () => {
     const res = await app.request('http://x/owner');
     expect(res.status).toBe(302);

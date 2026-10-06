@@ -170,3 +170,22 @@ describe('api', () => {
     expect((await app.request('http://x/api/tablets/9')).status).toBe(404);
   });
 });
+
+describe('shared footer with the GEAR logo', () => {
+  const footerOf = (html: string) => html.match(/<footer>([\s\S]*?)<\/footer>/)?.[1] ?? '';
+
+  it('appears on the tablets, publish, key, tablet and preview pages', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description)]));
+    for (const path of ['/', '/publish', '/key', '/tablet/1', '/preview/2']) {
+      const html = await (await app.request('http://x' + path)).text();
+      const footer = footerOf(html);
+      expect(footer, path).toContain('doubles at every mint, 1000 cap, ');
+      expect(footer, path).toContain(' only—you pay gas. 90%-treasury 10%-gearvault.');
+      expect(footer, path).not.toMatch(/\bgear only/);
+      expect(footer, path).toContain('href="https://landonthis.gearup.wtf"');
+      expect(footer, path).toContain('src="/gear-logo-cutout.png"');
+      expect(footer, path).toContain('alt="GEAR"');
+      expect(footer, path).toContain('aria-label="GEAR home on landonthis.gearup.wtf"');
+    }
+  });
+});

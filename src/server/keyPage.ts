@@ -34,13 +34,10 @@ export function keyPageBody(opts: { blobUpload: boolean }): string {
 .msg.bad { border-color:var(--bad); color:var(--bad); }
 .msg.ok { border-color:var(--ok); color:var(--ok); }
 .msg a { color:inherit; text-decoration:underline; }
-.warn { border-left-color:#f59e0b; }
-.warn b { color:#fbbf24; }
 details summary { cursor:pointer; color:var(--accent2); }
 </style>
 
 <div class="banner"><b>CAPs Mind key owner page.</b> Connect the contract owner wallet on Base, check the key art, then mint key #1. Every button opens your wallet to sign. Nothing is sent until you approve it there.</div>
-<div class="banner warn" id="ownerWarn" style="display:none"></div>
 
 <section class="keygrid">
   <div class="panel">
