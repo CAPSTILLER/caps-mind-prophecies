@@ -50,8 +50,8 @@ Why this way: every copy shares one image, but the name still shows the serial n
 | --- | --- | --- |
 | 1 | `capsMindKey_` (CAPs Mind key NFT) | `0x00635ca44339c7c194ef5bc87bf2cd6df04a666d` |
 | 2 | `gearToken` (GEAR, 6 decimals) | `0x5880cD05605A549f1DAb01a53ca61Ee559244bD1` |
-| 3 | `treasury_` (gets 90%) | **TBD, Cap to confirm** |
-| 4 | `gearVault_` (gets 10%) | **TBD, Cap to confirm** |
+| 3 | `treasury_` (gets 90%) | `0xCF1ac98565DA846E8263604b49C1276Ed78A0981` (plain wallet) |
+| 4 | `gearVault_` (gets 10%) | `0x41ca72E18f7F96F8F2b7be524AC8346e06bCB3AB` (GearVault contract; any address can receive GEAR) |
 | 5 | `initialOwner` (contract owner) | `0x1a72f7314297B0b8f6808A9248969A8108F49890` |
 
 None of these can be the zero address. The CAPs Mind key and GEAR addresses are fixed forever after deploy. The treasury and GearVault can be changed later by the owner.
