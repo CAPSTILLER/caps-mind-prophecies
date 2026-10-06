@@ -8,7 +8,7 @@
   },
   "rewrites": [
     {
-      "source": "/((?!favicon\\.ico$|prophecies/|uploads/).*)",
+      "source": "/((?!favicon\\.ico$|prophecies/|uploads/|key/).*)",
       "destination": "/api"
     }
   ],
