@@ -50,10 +50,6 @@ export const TABLET_STYLES = `<style>
 textarea.plain, input.plain { text-transform:none; letter-spacing:0; }
 .split { display:grid; grid-template-columns:1.1fr .9fr; gap:16px; }
 @media (max-width:860px){ .split { grid-template-columns:1fr; } }
-.quick { border:1px dashed var(--line); border-radius:12px; padding:12px; margin-top:10px; }
-.quick img { width:96px; height:72px; object-fit:cover; border-radius:6px; float:right; margin-left:10px; }
-.quick .uribox { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-top:6px; white-space:pre-wrap; }
-.quick::after { content:''; display:block; clear:both; }
 h2.sec { margin:26px 0 10px; font-size:18px; }
 select { width:100%; border-radius:10px; border:1px solid var(--line); background:#0b1220; color:var(--text); padding:10px 12px; font:inherit; }
 </style>`;
@@ -80,7 +76,7 @@ function previewCard(p: PreviewProphecy): string {
     <div class="meta"><span class="title">Prophecy ${p.n}</span><span class="badge soon">Not yet onchain</span></div>
     <div class="desc">${escapeHtml(p.description)}</div>
     <div class="meta"><span>Preview only. Minting opens once it is published as a tablet.</span></div>
-    <a class="btn" href="/publish#quick-${p.n}" style="text-align:center">Publish this tablet</a>
+    <a class="btn" href="/publish#publishPanel" style="text-align:center">Publish this tablet</a>
   </div>
 </div>`;
 }
@@ -194,22 +190,10 @@ ${status}
     <div class="mono">${escapeHtml(p.imageURI)}</div>
     <label>Description</label>
     <div class="mono" style="white-space:pre-wrap">${escapeHtml(p.description)}</div>
-    <div class="row">${onchain ? `<a class="btn primary" href="/tablet/${onchain.id}">Go to Tablet #${onchain.id}</a>` : `<a class="btn primary" href="/publish#quick-${p.n}">Publish this tablet</a>`}</div>
+    <div class="row">${onchain ? `<a class="btn primary" href="/tablet/${onchain.id}">Go to Tablet #${onchain.id}</a>` : `<a class="btn primary" href="/publish#publishPanel">Publish this tablet</a>`}</div>
     <p><a href="/">Back to tablets</a></p>
   </div>
 </section>`;
-}
-
-function quickFill(p: PreviewProphecy): string {
-  return `<div class="quick" id="quick-${p.n}" data-quick="${p.n}">
-  <img src="${escapeHtml(p.path)}" alt="Prophecy ${p.n}"/>
-  <div class="meta"><span class="title">Prophecy ${p.n}</span><span class="badge soon" data-quick-status="${p.n}">Not yet onchain</span></div>
-  <label style="margin-top:8px">Image link</label>
-  <div class="uribox mono">${escapeHtml(p.imageURI)}</div>
-  <label>Description</label>
-  <div class="uribox mono">${escapeHtml(p.description)}</div>
-  <div class="row"><button type="button" data-fill="${p.n}">Fill the form with Prophecy ${p.n}</button></div>
-</div>`;
 }
 
 /** Publish and edit page for CAPs Mind key holders. All checks run in the browser against Base. */
@@ -222,27 +206,19 @@ export function publishBody(opts: { blobUpload: boolean }): string {
   return `${TABLET_STYLES}
 <div class="banner"><b>Publish a prophecy tablet.</b> Connect a wallet that holds a CAPs Mind key, pick the key, add an image link (https:// or ipfs://) and the description, then sign. The tablet becomes the next tablet number and anyone can mint copies right away. Every button opens your wallet to sign. Nothing is sent until you approve it there.</div>
 
-<section class="split">
-  <div class="panel">
-    <h2 style="margin:0 0 6px;font-size:16px">1. Wallet and key</h2>
-    <p class="note" style="margin-top:0">Use the wallet button at the top to connect or disconnect.</p>
-    <div class="row" style="margin-top:0">
-      <button type="button" id="switchBtn" style="display:none">Switch to Base</button>
-    </div>
-    <div class="kv"><span>Connected</span><span class="mono" id="pubAddr">Not connected</span></div>
-    <div class="kv"><span>Network</span><span id="pubChain">-</span></div>
-    <div class="kv"><span>Publishing</span><span id="pubOpen">Checking…</span></div>
-    <div class="kv"><span>Tablets onchain</span><span id="pubCount">Checking…</span></div>
-    <label for="keySelect">CAPs Mind key to use</label>
-    <select id="keySelect" disabled><option value="">Connect a wallet first</option></select>
-    <div class="msg show" id="gateMsg">Tap Connect wallet at the top and pick the wallet that holds your CAPs Mind key.</div>
+<section class="panel">
+  <h2 style="margin:0 0 6px;font-size:16px">1. Wallet and key</h2>
+  <p class="note" style="margin-top:0">Use the wallet button at the top to connect or disconnect.</p>
+  <div class="row" style="margin-top:0">
+    <button type="button" id="switchBtn" style="display:none">Switch to Base</button>
   </div>
-
-  <div class="panel">
-    <h2 style="margin:0 0 6px;font-size:16px">Quick fill</h2>
-    <p class="note" style="margin-top:0">Cap's first two prophecies, ready to publish. Tap a button to fill the form below with the exact image link and text.</p>
-    ${PREVIEW_PROPHECIES.map(quickFill).join('')}
-  </div>
+  <div class="kv"><span>Connected</span><span class="mono" id="pubAddr">Not connected</span></div>
+  <div class="kv"><span>Network</span><span id="pubChain">-</span></div>
+  <div class="kv"><span>Publishing</span><span id="pubOpen">Checking…</span></div>
+  <div class="kv"><span>Tablets onchain</span><span id="pubCount">Checking…</span></div>
+  <label for="keySelect">CAPs Mind key to use</label>
+  <select id="keySelect" disabled><option value="">Connect a wallet first</option></select>
+  <div class="msg show" id="gateMsg">Tap Connect wallet at the top and pick the wallet that holds your CAPs Mind key.</div>
 </section>
 
 <section class="panel" style="margin-top:16px" id="publishPanel">
@@ -276,6 +252,6 @@ export function publishBody(opts: { blobUpload: boolean }): string {
   </div>
   <div class="msg" id="updateMsg"></div>
 </section>
-<script>window.__TABLETS_PAGE__=${scriptJson({ page: 'publish', blobUpload: opts.blobUpload, previews: PREVIEW_PROPHECIES })};</script>`;
+<script>window.__TABLETS_PAGE__=${scriptJson({ page: 'publish', blobUpload: opts.blobUpload })};</script>`;
 }
 

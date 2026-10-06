@@ -117,7 +117,7 @@ describe('image links and previews', () => {
     expect(displayImageUrl('javascript:alert(1)')).toBe('');
   });
 
-  it('quick-fill values match the committed art and descriptions', () => {
+  it('preview prophecy values match the committed art and descriptions', () => {
     expect(PREVIEW_PROPHECIES.map((p) => p.imageURI)).toEqual([
       'https://capsmind.gearup.wtf/prophecies/1.png',
       'https://capsmind.gearup.wtf/prophecies/2.png',

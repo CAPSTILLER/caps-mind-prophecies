@@ -20138,13 +20138,6 @@ function displayImageUrl(uri) {
   if (/^https:\/\//i.test(u)) return u;
   return "";
 }
-function sameImage(a, b) {
-  const norm = (s) => displayImageUrl(s).toLowerCase();
-  return norm(a) !== "" && norm(a) === norm(b);
-}
-function tabletForPreview(p, tablets) {
-  return tablets.find((t) => sameImage(t.imageURI, p.imageURI));
-}
 function byteLength(s) {
   return new TextEncoder().encode(s).length;
 }
@@ -21008,14 +21001,6 @@ function renderPublish() {
   const neutral = !s || !account;
   if (why) showMsg(gate, neutral ? "info" : "bad", esc(why));
   else showMsg(gate, "ok", `CAPs Mind key #${key.id} is ready. You can publish and edit tablets.`);
-  for (const p of PREVIEW_PROPHECIES) {
-    const onchain = s ? tabletForPreview(p, s.tablets) : void 0;
-    const badge = document.querySelector(`[data-quick-status="${p.n}"]`);
-    if (badge) {
-      badge.className = "badge " + (onchain ? "live" : "soon");
-      badge.textContent = onchain ? `Onchain as Tablet #${onchain.id}` : "Not yet onchain";
-    }
-  }
   const ed = $("editTablet");
   if (ed && s) {
     const prev = ed.value;
@@ -21160,23 +21145,6 @@ async function sendKeyTx(kind) {
     await refreshPublish();
   }
 }
-function quickFill(n) {
-  const p = PREVIEW_PROPHECIES.find((x) => x.n === n);
-  if (!p) return;
-  const img = $("imageUrl");
-  const desc = $("description");
-  if (img) img.value = p.imageURI;
-  if (desc) desc.value = p.description;
-  updatePreview("imageUrl", "preview", "previewImg");
-  updateBytes("description", "descBytes");
-  const onchain = pubState ? tabletForPreview(p, pubState.tablets) : void 0;
-  showMsg(
-    $("publishMsg"),
-    onchain ? "bad" : "info",
-    onchain ? `Heads up: Prophecy ${n} is already onchain as <a href="/tablet/${onchain.id}">Tablet #${onchain.id}</a>. Publishing again makes a second tablet.` : `Filled with Prophecy ${n}. Check it, then tap Publish tablet.`
-  );
-  $("publishPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
 async function onUpload(file) {
   const msg = $("publishMsg");
   const fd = new FormData();
@@ -21208,9 +21176,6 @@ function bootPublish() {
   $("editImageUrl")?.addEventListener("input", () => updatePreview("editImageUrl", "editPreview", "editPreviewImg"));
   $("description")?.addEventListener("input", () => updateBytes("description", "descBytes"));
   $("editDescription")?.addEventListener("input", () => updateBytes("editDescription", "editDescBytes"));
-  document.querySelectorAll("[data-fill]").forEach(
-    (b) => b.addEventListener("click", () => quickFill(Number(b.dataset.fill)))
-  );
   $("imageFile")?.addEventListener("change", (e) => {
     const f = e.target.files?.[0];
     if (f) void onUpload(f);

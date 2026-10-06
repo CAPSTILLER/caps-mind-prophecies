@@ -136,7 +136,7 @@ describe('tablet and preview pages', () => {
 });
 
 describe('publish page', () => {
-  it('has the key picker, publish and edit forms, and quick-fill values', async () => {
+  it('has the key picker, publish and edit forms', async () => {
     const { app } = createApp(cfg, stubReader([]));
     const res = await app.request('http://x/publish');
     expect(res.status).toBe(200);
@@ -144,11 +144,8 @@ describe('publish page', () => {
     for (const id of ['keySelect', 'gateMsg', 'imageUrl', 'description', 'publishBtn', 'editTablet', 'updateBtn']) {
       expect(html).toContain(`id="${id}"`);
     }
-    expect(html).toContain('https://capsmind.gearup.wtf/prophecies/1.png');
-    expect(html).toContain('https://capsmind.gearup.wtf/prophecies/2.png');
-    expect(html).toContain('data-fill="1"');
-    expect(html).toContain('data-fill="2"');
-    expect(html).toContain('shall never B blown');
+    expect(html).not.toContain('Quick fill');
+    expect(html).not.toContain('data-fill=');
     expect(html).toContain('src="/app.js"');
     expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
     // No upload box without Vercel Blob.

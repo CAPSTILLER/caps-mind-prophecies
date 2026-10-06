@@ -21,13 +21,11 @@ import {
 import { base } from 'viem/chains';
 import { capsMindKeyViewAbi, erc20Abi, tabletsAbi } from '../src/abis.js';
 import {
-  PREVIEW_PROPHECIES,
   TABLETS as T,
   TABLET_ERROR_TEXT,
   byteLength,
   displayImageUrl,
   isAllowedImageUri,
-  tabletForPreview,
   type Tablet,
 } from '../src/tablets.js';
 import { MintFlow, type MintDeps, type MintView } from '../src/mintFlow.js';
@@ -456,16 +454,6 @@ function renderPublish() {
   if (why) showMsg(gate, neutral ? 'info' : 'bad', esc(why));
   else showMsg(gate, 'ok', `CAPs Mind key #${key!.id} is ready. You can publish and edit tablets.`);
 
-  // quick-fill status
-  for (const p of PREVIEW_PROPHECIES) {
-    const onchain = s ? tabletForPreview(p, s.tablets) : undefined;
-    const badge = document.querySelector<HTMLElement>(`[data-quick-status="${p.n}"]`);
-    if (badge) {
-      badge.className = 'badge ' + (onchain ? 'live' : 'soon');
-      badge.textContent = onchain ? `Onchain as Tablet #${onchain.id}` : 'Not yet onchain';
-    }
-  }
-
   // edit picker
   const ed = $<HTMLSelectElement>('editTablet');
   if (ed && s) {
@@ -622,26 +610,6 @@ async function sendKeyTx(kind: 'publish' | 'update') {
   }
 }
 
-function quickFill(n: number) {
-  const p = PREVIEW_PROPHECIES.find((x) => x.n === n);
-  if (!p) return;
-  const img = $<HTMLInputElement>('imageUrl');
-  const desc = $<HTMLTextAreaElement>('description');
-  if (img) img.value = p.imageURI;
-  if (desc) desc.value = p.description;
-  updatePreview('imageUrl', 'preview', 'previewImg');
-  updateBytes('description', 'descBytes');
-  const onchain = pubState ? tabletForPreview(p, pubState.tablets) : undefined;
-  showMsg(
-    $('publishMsg'),
-    onchain ? 'bad' : 'info',
-    onchain
-      ? `Heads up: Prophecy ${n} is already onchain as <a href="/tablet/${onchain.id}">Tablet #${onchain.id}</a>. Publishing again makes a second tablet.`
-      : `Filled with Prophecy ${n}. Check it, then tap Publish tablet.`,
-  );
-  $('publishPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 async function onUpload(file: File) {
   const msg = $('publishMsg');
   const fd = new FormData();
@@ -674,9 +642,6 @@ function bootPublish() {
   $('editImageUrl')?.addEventListener('input', () => updatePreview('editImageUrl', 'editPreview', 'editPreviewImg'));
   $('description')?.addEventListener('input', () => updateBytes('description', 'descBytes'));
   $('editDescription')?.addEventListener('input', () => updateBytes('editDescription', 'editDescBytes'));
-  document.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach((b) =>
-    b.addEventListener('click', () => quickFill(Number(b.dataset.fill))),
-  );
   $<HTMLInputElement>('imageFile')?.addEventListener('change', (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) void onUpload(f);
