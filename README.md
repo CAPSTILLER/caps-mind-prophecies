@@ -19,26 +19,18 @@ One contract; token IDs mint 1, 2, 3…
 
 Owner can `setMediaURIs(image, animation)` (on-chain JSON: OpenSea `image` is the main view; `animation_url` is omitted when empty), `setBaseURI` (optional off-chain override), and `pause` key minting. Default key image: `https://capsmind.gearup.wtf/key/caps-mind-key.jpg` (file at `public/key/caps-mind-key.jpg`; **IPFS recommended later for permanence**). Default owner / key #1 mint-to: `0x6C05149910C2dd102032E44b96DA36988950B257`. Cap keeps control of GEAR supply so a lost/sold key does not strand the app — a 2M GEAR holder can mint a new Caps Mind key.
 
-## CapsMindProphecies (edition NFTs)
+## CapsMindProphecies (Prophecy Tablets, ERC-721)
 
-### Publishing
+Full plain-words notes: `contracts/BANKR_PROPHECY_TABLETS.md`. Flattened source: `contracts/flat/CapsMindProphecies.flat.sol`.
 
-- Caller calls `publish(keyId, imageUri, description)`.
-- Must **own** that Caps Mind `keyId`, and that ID must be **eligible**.
-- **Default:** every Caps Mind token ID is eligible unless locked.
-- Any Caps Mind holder who also holds ≥ **2,000,000 GEAR** can:
-  - `setPublishEligible(keyId, bool)` — lock or unlock **any** Caps Mind ID (including others')
-  - `pausePublishing(bool)` — pause **all** new uploads without changing per-id flags
-
-So if an old key is sold/lost, Cap (or any Caps Mind + 2M GEAR holder) can lock that ID out, or pause publishing entirely.
-
-### Minting (anyone)
-
-For mint number `n` of a given prophecy (starting at 1):
-
-`price = min(1000, 2^(n-1))` whole GEAR
-
-So: 1, 2, 4, 8, …, 512, then **1000 forever**. Payment uses `transferFrom`; **90% treasury / 10% GearVault**.
+- Gated on the deployed CAPs Mind key `0x00635ca44339c7c194ef5bc87bf2cd6df04a666d` (Bankr's version).
+- `publishTablet(keyId, imageURI, description)`: an eligible CAPs Mind key holder publishes the next tablet (1, 2, 3...).
+- `updateTablet(keyId, tabletId, imageURI, description)`: an eligible key holder changes a tablet's look for every copy (ERC-4906 refresh).
+- `mint(tabletId, maxPrice)`: anyone mints the next copy. Token IDs are global; each copy also has a serial inside its tablet (`tabletOf`, `serialOf`). Names read "Prophecy Tablet 2 #5" (onchain JSON in `tokenURI`).
+- Price per tablet: copy `n` costs `min(1000, 2^(n-1))` GEAR, split 90% treasury / 10% GearVault.
+- A key holder with 2,000,000 GEAR can `setPublishEligible(keyId, bool)` and `pausePublishing(bool)`.
+- Contract owner sets treasury / GearVault and can `pause()`; it cannot publish or edit tablets.
+- Constructor order: CAPs Mind key, GEAR, treasury, GearVault, owner.
 
 ## Local demo (no contracts)
 

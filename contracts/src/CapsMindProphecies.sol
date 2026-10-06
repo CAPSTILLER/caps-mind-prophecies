@@ -1,85 +1,103 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title CapsMindProphecies
-/// @notice Vault 42 prophecy tablets. A CapsMindKey holder whose key ID is eligible
-///         publishes image URI + description. Anyone mints editions by paying GEAR on a
-///         per-prophecy bonding curve: mint n costs min(1000, 2^(n-1)) whole GEAR, then
-///         stays at 1000 forever. Payment splits 90% treasury / 10% GearVault.
-///
-///         Publish eligibility
-///           - By default every Caps Mind token ID is eligible unless locked.
-///           - Any CapsMindKey holder who ALSO holds >= 2_000_000 GEAR may call
-///             setPublishEligible(keyId, bool) for ANY key ID (including others').
-///           - The same gate may call pausePublishing(bool) to stop ALL new uploads
-///             without changing per-id flags (Cap: "lock every caps mind out").
-///
-///         GEAR (Base mainnet): 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-interface IERC20Pay {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-    function decimals() external view returns (uint8);
-}
-
-interface ICapsMindKey {
+/// @dev Minimal view of the CAPs Mind key collection (Base: 0x00635ca44339c7c194ef5bc87bf2cd6df04a666d).
+///      Bankr's deployed key has balanceOf/ownerOf/totalMinted but NO totalSupply, so supply is read
+///      with try/catch (totalMinted first, then totalSupply).
+interface ICapsMindKeyView {
     function balanceOf(address owner) external view returns (uint256);
     function ownerOf(uint256 tokenId) external view returns (address);
+    function totalMinted() external view returns (uint256);
     function totalSupply() external view returns (uint256);
 }
 
-contract CapsMindProphecies {
+/// @title CapsMindProphecies (Prophecy Tablets)
+/// @notice ERC-721 prophecy tablets for Vault 42.
+///
+///         Tablets and copies
+///           - A CAPs Mind key holder publishes a tablet: an image URI (ipfs:// recommended) plus a
+///             description. Tablets are numbered 1, 2, 3, ... in publish order.
+///           - Anyone mints copies of any published tablet. Every copy is its own ERC-721 token with a
+///             global token ID (1, 2, 3, ... across all tablets) and a serial number inside its tablet
+///             (1, 2, 3, ... per tablet). tabletOf(tokenId) and serialOf(tokenId) read them back.
+///           - tokenURI builds the metadata JSON onchain: name "Prophecy Tablet 2 #5", the tablet's
+///             description and image, plus Tablet and Serial traits. Every copy of a tablet shares the
+///             same image and description.
+///
+///         Updating the look
+///           - A CAPs Mind key holder (eligible key, publishing not paused) can replace a tablet's image
+///             and description. All copies of that tablet change at once and ERC-4906
+///             BatchMetadataUpdate is emitted so marketplaces refresh.
+///
+///         Price
+///           - Copy n of a tablet costs min(1000, 2^(n-1)) whole GEAR: 1, 2, 4, ..., 512, then 1000
+///             forever. Each tablet has its own curve. Payment is split 90% treasury / 10% GearVault.
+///
+///         Publish eligibility (unchanged rules)
+///           - Every CAPs Mind key ID is eligible unless locked.
+///           - A CAPs Mind holder who also holds >= 2,000,000 GEAR can setPublishEligible(keyId, bool)
+///             for any key ID and pausePublishing(bool) to stop all publishing and tablet edits.
+///
+///         Contract owner
+///           - Sets treasury and GearVault addresses and can pause/unpause publishing, edits and mints.
+///           - Cannot publish or edit tablets (only CAPs Mind key holders can). Ownership moves in two
+///             steps (transferOwnership, then acceptOwnership). renounceOwnership is disabled.
+///
+///         GEAR (Base mainnet): 0x5880cD05605A549f1DAb01a53ca61Ee559244bD1 (6 decimals).
+contract CapsMindProphecies is ERC721, IERC4906, Ownable2Step, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+    using Strings for uint256;
+
     // ---------------------------------------------------------------------
-    // errors and events
+    // errors
     // ---------------------------------------------------------------------
 
-    error NotOwner();
-    error NotPendingOwner();
     error NotPublisher();
     error NotEligibilityAdmin();
     error KeyNotEligible();
     error PublishingPausedError();
-    error ZeroAddress();
     error PausedError();
-    error BadProphecy();
+    error ZeroAddress();
+    error BadTablet();
     error BadKey();
+    error BadToken();
     error EmptyImage();
     error EmptyDescription();
-    error DescriptionTooLong();
     error ImageTooLong();
-    error NotTokenOwner();
-    error NotApproved();
-    error BadToken();
-    error TransferToZero();
-    error EthRejected();
-    error GearTransferFailed();
+    error DescriptionTooLong();
+    error PriceAboveMax(uint256 price, uint256 maxPrice);
+    error RenounceDisabled();
+    error BadGearToken();
 
-    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
-    event Approval(address indexed owner, address indexed spender, uint256 indexed tokenId);
-    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    // ---------------------------------------------------------------------
+    // events
+    // ---------------------------------------------------------------------
 
-    event ProphecyPublished(
-        uint256 indexed prophecyId,
-        uint256 indexed keyId,
-        address indexed publisher,
-        string imageUri,
-        string description
+    event TabletPublished(
+        uint256 indexed tabletId, uint256 indexed keyId, address indexed publisher, string imageURI, string description
     );
-    event ProphecyMinted(
-        uint256 indexed prophecyId,
-        uint256 indexed tokenId,
-        address indexed minter,
-        uint256 mintNumber,
-        uint256 pricePaid
+    event TabletUpdated(
+        uint256 indexed tabletId, uint256 indexed keyId, address indexed editor, string imageURI, string description
     );
-    event CapsMindKeySet(address indexed capsMindKey);
+    event TabletMinted(
+        uint256 indexed tabletId, uint256 indexed tokenId, address indexed minter, uint256 serial, uint256 pricePaid
+    );
     event PublishEligibleSet(uint256 indexed keyId, bool eligible, address indexed by);
     event PublishingPausedSet(bool paused, address indexed by);
     event TreasurySet(address indexed treasury);
     event GearVaultSet(address indexed gearVault);
-    event BaseURISet(string baseURI);
-    event OwnershipTransferStarted(address indexed owner, address indexed pendingOwner);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
 
@@ -90,93 +108,74 @@ contract CapsMindProphecies {
     uint256 public constant TREASURY_BPS = 9000;
     uint256 public constant VAULT_BPS = 1000;
     uint256 public constant BPS = 10_000;
-    /// @dev Whole GEAR cap on the bonding curve (after this, every mint is 1000 GEAR).
+    /// @notice Whole GEAR cap on the curve. From copy 11 on, every copy costs 1000 GEAR.
     uint256 public constant MAX_PRICE_GEAR = 1000;
-    /// @dev First mint number where 2^(n-1) >= 1000 (2^10 = 1024).
-    uint256 public constant PRICE_CAP_MINT_NUMBER = 11;
-    uint256 public constant MAX_DESCRIPTION_BYTES = 2048;
-    uint256 public constant MAX_IMAGE_URI_BYTES = 1024;
-    /// @dev Whole GEAR hold required (with a Caps Mind key) to change eligibility / pause publishing.
+    /// @notice First serial where 2^(n-1) >= 1000 (2^10 = 1024).
+    uint256 public constant PRICE_CAP_SERIAL = 11;
+    /// @notice Whole GEAR a CAPs Mind holder must also hold to lock keys or pause publishing.
     uint256 public constant KEY_HOLD_GEAR = 2_000_000;
-
-    string public constant NAME = "CAPs Mind Prophecy";
-    string public constant SYMBOL = "CAPSPROP";
+    uint256 public constant MAX_IMAGE_URI_BYTES = 1024;
+    uint256 public constant MAX_DESCRIPTION_BYTES = 2048;
 
     // ---------------------------------------------------------------------
     // storage
     // ---------------------------------------------------------------------
 
-    IERC20Pay public immutable gear;
-    uint256 public immutable gearUnit; // 10^decimals
-    uint256 public immutable keyHoldAmount; // KEY_HOLD_GEAR * gearUnit
+    /// @notice CAPs Mind key collection. Fixed at deploy.
+    ICapsMindKeyView public immutable capsMindKey;
+    /// @notice GEAR token. Fixed at deploy.
+    IERC20 public immutable gear;
+    /// @notice 10 ** GEAR decimals.
+    uint256 public immutable gearUnit;
+    /// @notice KEY_HOLD_GEAR in GEAR atomic units.
+    uint256 public immutable keyHoldAmount;
 
-    address public owner;
-    address public pendingOwner;
     address public treasury;
     address public gearVault;
+    /// @notice Owner pause: blocks publishing, tablet edits and mints.
     bool public paused;
-
-    /// @notice CapsMindKey ERC-721 collection.
-    address public capsMindKey;
-    /// @notice When true, no new prophecy uploads (minting editions still allowed unless `paused`).
+    /// @notice Key-holder pause: blocks publishing and tablet edits (mints still work).
     bool public publishingPaused;
-    /// @notice keyId => locked out of publishing. Default false = eligible.
-    mapping(uint256 => bool) private _publishLocked;
 
-    string public baseURI;
-    uint256 public prophecyCount;
+    /// @notice Number of tablets published. Tablet IDs run 1..tabletCount.
+    uint256 public tabletCount;
+    /// @notice Number of copies minted across all tablets. Token IDs run 1..totalSupply.
     uint256 public totalSupply;
 
-    struct Prophecy {
-        string imageUri;
+    struct Tablet {
+        string imageURI;
         string description;
-        uint256 minted; // how many editions minted so far
+        uint256 minted; // copies minted so far = latest serial
         address publisher;
+        uint256 keyId; // CAPs Mind key used to publish
         uint64 publishedAt;
-        uint256 keyId; // Caps Mind key used to publish
+        uint64 updatedAt;
     }
 
-    mapping(uint256 => Prophecy) private _prophecies;
-    mapping(uint256 => uint256) public prophecyOf; // edition tokenId => prophecyId
+    mapping(uint256 => Tablet) private _tablets;
+    mapping(uint256 => uint256) private _tabletOf; // tokenId => tabletId
+    mapping(uint256 => uint256) private _serialOf; // tokenId => serial
+    mapping(uint256 => mapping(uint256 => uint256)) private _tokenBySerial; // tabletId => serial => tokenId
+    mapping(uint256 => bool) private _publishLocked; // keyId => locked (default false = eligible)
 
-    mapping(uint256 => address) private _ownerOf;
-    mapping(address => uint256) private _balanceOf;
-    mapping(uint256 => address) private _tokenApproval;
-    mapping(address => mapping(address => bool)) private _operatorApproval;
-
-    constructor(
-        address initialOwner,
-        address gearToken,
-        address treasury_,
-        address gearVault_,
-        address capsMindKey_,
-        string memory baseURI_
-    ) {
+    constructor(address capsMindKey_, address gearToken, address treasury_, address gearVault_, address initialOwner)
+        ERC721("CAPs Mind Prophecy Tablets", "CAPSPROP")
+        Ownable(initialOwner)
+    {
         if (
-            initialOwner == address(0) || gearToken == address(0) || treasury_ == address(0)
-                || gearVault_ == address(0) || capsMindKey_ == address(0)
-        ) revert ZeroAddress();
-
-        owner = initialOwner;
-        gear = IERC20Pay(gearToken);
-        uint8 d = IERC20Pay(gearToken).decimals();
+            capsMindKey_ == address(0) || gearToken == address(0) || treasury_ == address(0) || gearVault_ == address(0)
+        ) {
+            revert ZeroAddress();
+        }
+        capsMindKey = ICapsMindKeyView(capsMindKey_);
+        gear = IERC20(gearToken);
+        uint8 d = _readDecimals(gearToken);
         gearUnit = 10 ** uint256(d);
         keyHoldAmount = KEY_HOLD_GEAR * gearUnit;
         treasury = treasury_;
         gearVault = gearVault_;
-        capsMindKey = capsMindKey_;
-        baseURI = baseURI_;
-
-        emit OwnershipTransferred(address(0), initialOwner);
-        emit CapsMindKeySet(capsMindKey_);
         emit TreasurySet(treasury_);
         emit GearVaultSet(gearVault_);
-        emit BaseURISet(baseURI_);
-    }
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
     }
 
     modifier whenNotPaused() {
@@ -185,96 +184,146 @@ contract CapsMindProphecies {
     }
 
     // ---------------------------------------------------------------------
-    // views: bonding price
+    // price views
     // ---------------------------------------------------------------------
 
-    /// @notice Whole GEAR price for mint number `n` (1-based): min(1000, 2^(n-1)).
-    function priceForMintNumber(uint256 n) public pure returns (uint256 wholeGear) {
+    /// @notice Whole GEAR price for serial `n` (1-based) of any tablet: min(1000, 2^(n-1)).
+    function priceForSerial(uint256 n) public pure returns (uint256 wholeGear) {
         if (n == 0) return 0;
-        if (n >= PRICE_CAP_MINT_NUMBER) return MAX_PRICE_GEAR;
+        if (n >= PRICE_CAP_SERIAL) return MAX_PRICE_GEAR;
         return uint256(1) << (n - 1);
     }
 
-    /// @notice Next mint price for a prophecy in whole GEAR.
-    function nextPriceWhole(uint256 prophecyId) public view returns (uint256) {
-        Prophecy storage p = _prophecies[prophecyId];
-        if (p.publishedAt == 0) revert BadProphecy();
-        return priceForMintNumber(p.minted + 1);
+    /// @notice Whole GEAR price of the next copy of `tabletId`.
+    function nextPriceWhole(uint256 tabletId) public view returns (uint256) {
+        return priceForSerial(_tablet(tabletId).minted + 1);
     }
 
-    /// @notice Next mint price in GEAR atomic units (scaled by decimals).
-    function nextPrice(uint256 prophecyId) public view returns (uint256) {
-        return nextPriceWhole(prophecyId) * gearUnit;
+    /// @notice GEAR atomic units (6 decimals on Base) for the next copy of `tabletId`.
+    ///         Pass this (or more) as `maxPrice` to mint, and approve at least this much GEAR.
+    function nextPrice(uint256 tabletId) public view returns (uint256) {
+        return nextPriceWhole(tabletId) * gearUnit;
     }
 
-    function getProphecy(uint256 prophecyId)
+    // ---------------------------------------------------------------------
+    // tablet / token views
+    // ---------------------------------------------------------------------
+
+    function getTablet(uint256 tabletId)
         external
         view
         returns (
-            string memory imageUri,
+            string memory imageURI,
             string memory description,
             uint256 minted,
             address publisher,
+            uint256 keyId,
             uint64 publishedAt,
-            uint256 nextPriceWholeGear,
-            uint256 keyId
+            uint64 updatedAt,
+            uint256 nextPriceWholeGear
         )
     {
-        Prophecy storage p = _prophecies[prophecyId];
-        if (p.publishedAt == 0) revert BadProphecy();
+        Tablet storage t = _tablet(tabletId);
         return (
-            p.imageUri,
-            p.description,
-            p.minted,
-            p.publisher,
-            p.publishedAt,
-            priceForMintNumber(p.minted + 1),
-            p.keyId
+            t.imageURI,
+            t.description,
+            t.minted,
+            t.publisher,
+            t.keyId,
+            t.publishedAt,
+            t.updatedAt,
+            priceForSerial(t.minted + 1)
         );
     }
 
-    /// @notice True unless this Caps Mind key ID has been locked out of publishing.
+    /// @notice Which tablet a token is a copy of.
+    function tabletOf(uint256 tokenId) public view returns (uint256) {
+        _requireOwned(tokenId);
+        return _tabletOf[tokenId];
+    }
+
+    /// @notice The token's serial number inside its tablet (1, 2, 3, ...).
+    function serialOf(uint256 tokenId) public view returns (uint256) {
+        _requireOwned(tokenId);
+        return _serialOf[tokenId];
+    }
+
+    /// @notice Token ID of copy `serial` of `tabletId`.
+    function tokenOfTabletSerial(uint256 tabletId, uint256 serial) external view returns (uint256 tokenId) {
+        tokenId = _tokenBySerial[tabletId][serial];
+        if (tokenId == 0) revert BadToken();
+    }
+
+    /// @notice "Prophecy Tablet <tabletId> #<serial>"
+    function tokenName(uint256 tokenId) public view returns (string memory) {
+        _requireOwned(tokenId);
+        return string.concat("Prophecy Tablet ", _tabletOf[tokenId].toString(), " #", _serialOf[tokenId].toString());
+    }
+
+    /// @notice Onchain JSON (base64 data URI) with name "Prophecy Tablet T #S", the tablet's
+    ///         description and image, and Tablet / Serial traits.
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        _requireOwned(tokenId);
+        uint256 tabletId = _tabletOf[tokenId];
+        uint256 serial = _serialOf[tokenId];
+        Tablet storage t = _tablets[tabletId];
+        bytes memory json = abi.encodePacked(
+            '{"name":"',
+            tokenName(tokenId),
+            '","description":"',
+            _escapeJSON(t.description),
+            '","image":"',
+            _escapeJSON(t.imageURI),
+            '","attributes":[{"trait_type":"Tablet","value":',
+            tabletId.toString(),
+            '},{"trait_type":"Serial","display_type":"number","value":',
+            serial.toString(),
+            "}]}"
+        );
+        return string.concat("data:application/json;base64,", Base64.encode(json));
+    }
+
+    // ---------------------------------------------------------------------
+    // eligibility views
+    // ---------------------------------------------------------------------
+
+    /// @notice True if CAPs Mind key `keyId` exists and is not locked out.
     function isPublishEligible(uint256 keyId) public view returns (bool) {
         if (!_keyExists(keyId)) return false;
         return !_publishLocked[keyId];
     }
 
-    /// @notice True if `account` owns `keyId`, that key is eligible, and publishing is not paused.
+    /// @notice True if `account` owns `keyId`, the key is eligible, and publishing is open.
     function canPublishWithKey(address account, uint256 keyId) public view returns (bool) {
         if (account == address(0) || publishingPaused || paused) return false;
-        if (!isPublishEligible(keyId)) return false;
-        try ICapsMindKey(capsMindKey).ownerOf(keyId) returns (address o) {
-            return o == account;
-        } catch {
-            return false;
-        }
+        if (_publishLocked[keyId]) return false;
+        return _keyOwner(keyId) == account;
     }
 
-    /// @notice True if `account` owns at least one eligible Caps Mind key and publishing is open.
-    function canPublish(address account) public view returns (bool) {
+    /// @notice True if `account` owns at least one eligible CAPs Mind key and publishing is open.
+    ///         Helper for sites; loops over key IDs 1..supply.
+    function canPublish(address account) external view returns (bool) {
         if (account == address(0) || publishingPaused || paused) return false;
-        ICapsMindKey key = ICapsMindKey(capsMindKey);
-        if (key.balanceOf(account) == 0) return false;
-        uint256 supply = key.totalSupply();
+        if (capsMindKey.balanceOf(account) == 0) return false;
+        uint256 supply = _keySupply();
         for (uint256 id = 1; id <= supply; id++) {
-            if (canPublishWithKey(account, id)) return true;
+            if (!_publishLocked[id] && _keyOwner(id) == account) return true;
         }
         return false;
     }
 
-    /// @notice True if account holds any Caps Mind key AND >= 2_000_000 GEAR.
+    /// @notice True if `account` holds a CAPs Mind key AND >= 2,000,000 GEAR.
     function canManageEligibility(address account) public view returns (bool) {
         if (account == address(0)) return false;
-        if (ICapsMindKey(capsMindKey).balanceOf(account) == 0) return false;
+        if (capsMindKey.balanceOf(account) == 0) return false;
         return gear.balanceOf(account) >= keyHoldAmount;
     }
 
     // ---------------------------------------------------------------------
-    // eligibility admin (Caps Mind holder + 2M GEAR)
+    // eligibility admin (CAPs Mind holder + 2,000,000 GEAR)
     // ---------------------------------------------------------------------
 
-    /// @notice Lock or unlock publish rights for ANY Caps Mind key ID.
-    ///         Caller must own a Caps Mind key and hold >= 2_000_000 GEAR.
+    /// @notice Lock (false) or unlock (true) publishing and tablet edits for any CAPs Mind key ID.
     function setPublishEligible(uint256 keyId, bool eligible) external {
         if (!canManageEligibility(msg.sender)) revert NotEligibilityAdmin();
         if (!_keyExists(keyId)) revert BadKey();
@@ -282,8 +331,7 @@ contract CapsMindProphecies {
         emit PublishEligibleSet(keyId, eligible, msg.sender);
     }
 
-    /// @notice Pause or unpause ALL new prophecy uploads (does not change per-id flags).
-    ///         Caller must own a Caps Mind key and hold >= 2_000_000 GEAR.
+    /// @notice Pause (true) or resume (false) all publishing and tablet edits. Per-key locks are kept.
     function pausePublishing(bool paused_) external {
         if (!canManageEligibility(msg.sender)) revert NotEligibilityAdmin();
         publishingPaused = paused_;
@@ -291,77 +339,86 @@ contract CapsMindProphecies {
     }
 
     // ---------------------------------------------------------------------
-    // publish (eligible Caps Mind key required)
+    // publish and edit (eligible CAPs Mind key)
     // ---------------------------------------------------------------------
 
-    /// @notice Publish a new prophecy using Caps Mind key `keyId`.
-    ///         Caller must own that key, it must be eligible, and publishing must not be paused.
-    function publish(uint256 keyId, string calldata imageUri, string calldata description)
+    /// @notice Publish a new tablet with CAPs Mind key `keyId`. It becomes the next tablet ID and is
+    ///         mintable right away.
+    function publishTablet(uint256 keyId, string calldata imageURI, string calldata description)
         external
         whenNotPaused
-        returns (uint256 prophecyId)
+        returns (uint256 tabletId)
     {
-        if (publishingPaused) revert PublishingPausedError();
-        if (!canPublishWithKey(msg.sender, keyId)) {
-            if (!_keyExists(keyId) || ICapsMindKey(capsMindKey).ownerOf(keyId) != msg.sender) {
-                revert NotPublisher();
-            }
-            if (_publishLocked[keyId]) revert KeyNotEligible();
-            revert NotPublisher();
-        }
-        if (bytes(imageUri).length == 0) revert EmptyImage();
-        if (bytes(description).length == 0) revert EmptyDescription();
-        if (bytes(imageUri).length > MAX_IMAGE_URI_BYTES) revert ImageTooLong();
-        if (bytes(description).length > MAX_DESCRIPTION_BYTES) revert DescriptionTooLong();
+        _requireKeyRights(keyId);
+        _validate(imageURI, description);
 
-        prophecyId = prophecyCount + 1;
-        prophecyCount = prophecyId;
-        _prophecies[prophecyId] = Prophecy({
-            imageUri: imageUri,
-            description: description,
-            minted: 0,
-            publisher: msg.sender,
-            publishedAt: uint64(block.timestamp),
-            keyId: keyId
-        });
-        emit ProphecyPublished(prophecyId, keyId, msg.sender, imageUri, description);
+        tabletId = ++tabletCount;
+        Tablet storage t = _tablets[tabletId];
+        t.imageURI = imageURI;
+        t.description = description;
+        t.publisher = msg.sender;
+        t.keyId = keyId;
+        t.publishedAt = uint64(block.timestamp);
+        t.updatedAt = uint64(block.timestamp);
+        emit TabletPublished(tabletId, keyId, msg.sender, imageURI, description);
+    }
+
+    /// @notice Replace a tablet's image and description (all copies change). Any holder of an eligible
+    ///         CAPs Mind key can do this, not only the original publisher.
+    function updateTablet(uint256 keyId, uint256 tabletId, string calldata imageURI, string calldata description)
+        external
+        whenNotPaused
+    {
+        _requireKeyRights(keyId);
+        Tablet storage t = _tablet(tabletId);
+        _validate(imageURI, description);
+
+        t.imageURI = imageURI;
+        t.description = description;
+        t.updatedAt = uint64(block.timestamp);
+        emit TabletUpdated(tabletId, keyId, msg.sender, imageURI, description);
+
+        uint256 minted = t.minted;
+        if (minted == 1) {
+            emit MetadataUpdate(_tokenBySerial[tabletId][1]);
+        } else if (minted > 1) {
+            // Copies of one tablet always sit inside [first copy, latest copy].
+            emit BatchMetadataUpdate(_tokenBySerial[tabletId][1], _tokenBySerial[tabletId][minted]);
+        }
     }
 
     // ---------------------------------------------------------------------
-    // mint (anyone, bonding GEAR)
+    // mint (anyone, GEAR bonding price)
     // ---------------------------------------------------------------------
 
-    /// @notice Mint the next edition of a prophecy. Pulls nextPrice() GEAR from caller
-    ///         (approve first), sends 90% to treasury and 10% to GearVault.
-    function mint(uint256 prophecyId) external whenNotPaused returns (uint256 tokenId) {
-        Prophecy storage p = _prophecies[prophecyId];
-        if (p.publishedAt == 0) revert BadProphecy();
+    /// @notice Mint the next copy of `tabletId` to the caller. Pulls nextPrice(tabletId) GEAR
+    ///         (approve first): 90% to treasury, 10% to GearVault. Reverts if the price is above
+    ///         `maxPrice` (GEAR atomic units), which protects against someone minting first.
+    function mint(uint256 tabletId, uint256 maxPrice) external nonReentrant whenNotPaused returns (uint256 tokenId) {
+        Tablet storage t = _tablet(tabletId);
 
-        uint256 mintNumber = p.minted + 1;
-        uint256 price = priceForMintNumber(mintNumber) * gearUnit;
+        uint256 serial = t.minted + 1;
+        uint256 price = priceForSerial(serial) * gearUnit;
+        if (price > maxPrice) revert PriceAboveMax(price, maxPrice);
         uint256 toTreasury = (price * TREASURY_BPS) / BPS;
         uint256 toVault = price - toTreasury;
 
-        if (!gear.transferFrom(msg.sender, treasury, toTreasury)) revert GearTransferFailed();
-        if (!gear.transferFrom(msg.sender, gearVault, toVault)) revert GearTransferFailed();
+        t.minted = serial;
+        tokenId = ++totalSupply;
+        _tabletOf[tokenId] = tabletId;
+        _serialOf[tokenId] = serial;
+        _tokenBySerial[tabletId][serial] = tokenId;
+        emit TabletMinted(tabletId, tokenId, msg.sender, serial, price);
 
-        p.minted = mintNumber;
-        tokenId = totalSupply + 1;
-        totalSupply = tokenId;
-        prophecyOf[tokenId] = prophecyId;
-        _mint(msg.sender, tokenId);
-        emit ProphecyMinted(prophecyId, tokenId, msg.sender, mintNumber, price);
+        gear.safeTransferFrom(msg.sender, treasury, toTreasury);
+        gear.safeTransferFrom(msg.sender, gearVault, toVault);
+
+        _safeMint(msg.sender, tokenId);
     }
 
     // ---------------------------------------------------------------------
     // owner admin
     // ---------------------------------------------------------------------
-
-    function setCapsMindKey(address capsMindKey_) external onlyOwner {
-        if (capsMindKey_ == address(0)) revert ZeroAddress();
-        capsMindKey = capsMindKey_;
-        emit CapsMindKeySet(capsMindKey_);
-    }
 
     function setTreasury(address treasury_) external onlyOwner {
         if (treasury_ == address(0)) revert ZeroAddress();
@@ -375,11 +432,6 @@ contract CapsMindProphecies {
         emit GearVaultSet(gearVault_);
     }
 
-    function setBaseURI(string calldata uri) external onlyOwner {
-        baseURI = uri;
-        emit BaseURISet(uri);
-    }
-
     function pause() external onlyOwner {
         paused = true;
         emit Paused(msg.sender);
@@ -390,129 +442,122 @@ contract CapsMindProphecies {
         emit Unpaused(msg.sender);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-        pendingOwner = newOwner;
-        emit OwnershipTransferStarted(owner, newOwner);
-    }
-
-    function acceptOwnership() external {
-        if (msg.sender != pendingOwner) revert NotPendingOwner();
-        address prev = owner;
-        owner = msg.sender;
-        pendingOwner = address(0);
-        emit OwnershipTransferred(prev, msg.sender);
+    /// @dev Disabled so treasury / GearVault / pause controls can never be thrown away by accident.
+    function renounceOwnership() public view override onlyOwner {
+        revert RenounceDisabled();
     }
 
     // ---------------------------------------------------------------------
-    // ERC-721 (edition NFTs)
+    // ERC-165
     // ---------------------------------------------------------------------
 
-    function name() external pure returns (string memory) {
-        return NAME;
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, IERC165) returns (bool) {
+        return interfaceId == bytes4(0x49064906) || super.supportsInterface(interfaceId);
     }
 
-    function symbol() external pure returns (string memory) {
-        return SYMBOL;
+    // ---------------------------------------------------------------------
+    // internals
+    // ---------------------------------------------------------------------
+
+    function _tablet(uint256 tabletId) internal view returns (Tablet storage t) {
+        t = _tablets[tabletId];
+        if (t.publishedAt == 0) revert BadTablet();
     }
 
-    function balanceOf(address account) external view returns (uint256) {
-        if (account == address(0)) revert ZeroAddress();
-        return _balanceOf[account];
+    function _requireKeyRights(uint256 keyId) internal view {
+        if (publishingPaused) revert PublishingPausedError();
+        if (_keyOwner(keyId) != msg.sender) revert NotPublisher();
+        if (_publishLocked[keyId]) revert KeyNotEligible();
     }
 
-    function ownerOf(uint256 tokenId) public view returns (address) {
-        address o = _ownerOf[tokenId];
-        if (o == address(0)) revert BadToken();
-        return o;
+    function _validate(string calldata imageURI, string calldata description) internal pure {
+        if (bytes(imageURI).length == 0) revert EmptyImage();
+        if (bytes(description).length == 0) revert EmptyDescription();
+        if (bytes(imageURI).length > MAX_IMAGE_URI_BYTES) revert ImageTooLong();
+        if (bytes(description).length > MAX_DESCRIPTION_BYTES) revert DescriptionTooLong();
     }
 
-    function tokenURI(uint256 tokenId) external view returns (string memory) {
-        if (_ownerOf[tokenId] == address(0)) revert BadToken();
-        return string(abi.encodePacked(baseURI, _toString(tokenId)));
-    }
-
-    function approve(address spender, uint256 tokenId) external {
-        address o = ownerOf(tokenId);
-        if (msg.sender != o && !_operatorApproval[o][msg.sender]) revert NotApproved();
-        _tokenApproval[tokenId] = spender;
-        emit Approval(o, spender, tokenId);
-    }
-
-    function getApproved(uint256 tokenId) external view returns (address) {
-        if (_ownerOf[tokenId] == address(0)) revert BadToken();
-        return _tokenApproval[tokenId];
-    }
-
-    function setApprovalForAll(address operator, bool approved) external {
-        _operatorApproval[msg.sender][operator] = approved;
-        emit ApprovalForAll(msg.sender, operator, approved);
-    }
-
-    function isApprovedForAll(address account, address operator) external view returns (bool) {
-        return _operatorApproval[account][operator];
-    }
-
-    function transferFrom(address from, address to, uint256 tokenId) public {
-        if (to == address(0)) revert TransferToZero();
-        address o = ownerOf(tokenId);
-        if (o != from) revert NotTokenOwner();
-        if (
-            msg.sender != from && !_operatorApproval[from][msg.sender]
-                && _tokenApproval[tokenId] != msg.sender
-        ) revert NotApproved();
-        _tokenApproval[tokenId] = address(0);
-        _balanceOf[from] -= 1;
-        _balanceOf[to] += 1;
-        _ownerOf[tokenId] = to;
-        emit Transfer(from, to, tokenId);
-    }
-
-    function safeTransferFrom(address from, address to, uint256 tokenId) external {
-        transferFrom(from, to, tokenId);
-    }
-
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata) external {
-        transferFrom(from, to, tokenId);
-    }
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == 0x01ffc9a7 || interfaceId == 0x80ac58cd || interfaceId == 0x5b5e139f;
+    /// @dev Owner of CAPs Mind key `keyId`, or address(0) if it does not exist.
+    function _keyOwner(uint256 keyId) internal view returns (address) {
+        if (keyId == 0) return address(0);
+        try capsMindKey.ownerOf(keyId) returns (address o) {
+            return o;
+        } catch {
+            return address(0);
+        }
     }
 
     function _keyExists(uint256 keyId) internal view returns (bool) {
-        if (keyId == 0) return false;
-        try ICapsMindKey(capsMindKey).ownerOf(keyId) returns (address o) {
-            return o != address(0);
-        } catch {
-            return false;
-        }
+        return _keyOwner(keyId) != address(0);
     }
 
-    function _mint(address to, uint256 tokenId) internal {
-        _ownerOf[tokenId] = to;
-        _balanceOf[to] += 1;
-        emit Transfer(address(0), to, tokenId);
+    function _keySupply() internal view returns (uint256) {
+        try capsMindKey.totalMinted() returns (uint256 n) {
+            return n;
+        } catch {}
+        try capsMindKey.totalSupply() returns (uint256 n) {
+            return n;
+        } catch {}
+        return 0;
     }
 
-    function _toString(uint256 value) internal pure returns (string memory) {
-        if (value == 0) return "0";
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
+    function _readDecimals(address token) internal view returns (uint8) {
+        (bool ok, bytes memory data) = token.staticcall(abi.encodeWithSignature("decimals()"));
+        if (!ok || data.length < 32) revert BadGearToken();
+        uint256 d = abi.decode(data, (uint256));
+        if (d > 36) revert BadGearToken();
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint8(d); // safe: d <= 36
     }
 
-    receive() external payable {
-        revert EthRejected();
+    /// @dev Escapes a string for use inside a JSON string value: quote, backslash and control bytes.
+    function _escapeJSON(string memory input) internal pure returns (string memory) {
+        bytes memory b = bytes(input);
+        uint256 extra = 0;
+        for (uint256 i; i < b.length; i++) {
+            bytes1 c = b[i];
+            if (c == '"' || c == "\\" || c == 0x08 || c == 0x0c || c == "\n" || c == "\r" || c == "\t") {
+                extra += 1;
+            } else if (uint8(c) < 0x20) {
+                extra += 5; // \u00XX
+            }
+        }
+        if (extra == 0) return input;
+
+        bytes memory out = new bytes(b.length + extra);
+        bytes16 hexChars = "0123456789abcdef";
+        uint256 j = 0;
+        for (uint256 i; i < b.length; i++) {
+            bytes1 c = b[i];
+            if (c == '"' || c == "\\") {
+                out[j++] = "\\";
+                out[j++] = c;
+            } else if (c == "\n") {
+                out[j++] = "\\";
+                out[j++] = "n";
+            } else if (c == "\r") {
+                out[j++] = "\\";
+                out[j++] = "r";
+            } else if (c == "\t") {
+                out[j++] = "\\";
+                out[j++] = "t";
+            } else if (c == 0x08) {
+                out[j++] = "\\";
+                out[j++] = "b";
+            } else if (c == 0x0c) {
+                out[j++] = "\\";
+                out[j++] = "f";
+            } else if (uint8(c) < 0x20) {
+                out[j++] = "\\";
+                out[j++] = "u";
+                out[j++] = "0";
+                out[j++] = "0";
+                out[j++] = hexChars[uint8(c) >> 4];
+                out[j++] = hexChars[uint8(c) & 0x0f];
+            } else {
+                out[j++] = c;
+            }
+        }
+        return string(out);
     }
 }
