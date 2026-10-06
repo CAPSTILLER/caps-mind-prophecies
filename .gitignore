@@ -11,3 +11,4 @@ contracts/cache/
 contracts/out/
 contracts/broadcast/
 web/app.js.map
+web/key-page.js.map

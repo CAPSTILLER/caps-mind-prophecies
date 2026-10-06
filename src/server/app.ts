@@ -9,6 +9,7 @@ import {
   mintLocal,
   publishLocal,
 } from './localStore.js';
+import { keyPageBody } from './keyPage.js';
 import { escapeHtml, page } from './pages.js';
 import { SEED_PROPHECIES, withNextPrice } from './seed.js';
 import { readFile } from 'node:fs/promises';
@@ -146,7 +147,9 @@ export function createApp(cfg: SiteConfig = configFromEnv()) {
     const token = process.env.BLOB_READ_WRITE_TOKEN;
     if (token) {
       const { put } = await import('@vercel/blob');
-      const stored = await put(`prophecies/${Date.now()}-${blob.name}`, blob, {
+      const folder = form.folder === 'key' ? 'key' : 'prophecies';
+      const safeName = blob.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+      const stored = await put(`${folder}/${Date.now()}-${safeName}`, blob, {
         access: 'public',
         token,
       });
@@ -172,6 +175,23 @@ export function createApp(cfg: SiteConfig = configFromEnv()) {
       return c.text('// run npm run build:web', 500);
     }
   });
+
+  app.get('/key-page.js', async (c) => {
+    const built = path.join(process.cwd(), 'web', 'key-page.js');
+    try {
+      const js = await readFile(built, 'utf8');
+      return c.body(js, 200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+    } catch {
+      return c.text('// run npm run build:web', 500);
+    }
+  });
+
+  /** Owner page for the deployed CAPs Mind key NFT on Base mainnet. */
+  app.get('/key', (c) => {
+    const blobUpload = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    return c.html(page('CAPs Mind key', keyPageBody({ blobUpload }), 'key', '/key-page.js'));
+  });
+  app.get('/owner', (c) => c.redirect('/key', 302));
 
   app.get('/', async (c) => {
     const liveNote = cfg.live

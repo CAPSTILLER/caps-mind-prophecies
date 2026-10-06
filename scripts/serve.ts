@@ -5,6 +5,7 @@ import { appFromEnv } from '../src/server/app.js';
 const { app } = appFromEnv();
 app.use('/prophecies/*', serveStatic({ root: './public' }));
 app.use('/uploads/*', serveStatic({ root: './public' }));
+app.use('/key/*', serveStatic({ root: './public' }));
 app.use('/favicon.ico', serveStatic({ root: './public' }));
 
 const port = Number(process.env.PORT || 8787);

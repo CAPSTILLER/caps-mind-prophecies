@@ -1,6 +1,11 @@
 /** Shared HTML shell for the Vault 42 prophecies site. */
 
-export function page(title: string, body: string, active: 'gallery' | 'publish' | 'detail' = 'gallery'): string {
+export function page(
+  title: string,
+  body: string,
+  active: 'gallery' | 'publish' | 'detail' | 'key' = 'gallery',
+  script = '/app.js',
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -96,6 +101,7 @@ footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 
   <nav>
     <a href="/" class="${active === 'gallery' ? 'on' : ''}">Gallery</a>
     <a href="/publish" class="${active === 'publish' ? 'on' : ''}">Publish</a>
+    <a href="/key" class="${active === 'key' ? 'on' : ''}">Key</a>
   </nav>
   <div class="wallet" id="walletChip">Wallet disconnected</div>
 </header>
@@ -103,7 +109,7 @@ footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 
 ${body}
 </main>
 <footer>Bonding mint: 1, 2, 4 … GEAR, capped at 1000. Split 90% treasury / 10% GearVault. American spelling. Prophecies by CAPs mind.</footer>
-<script type="module" src="/app.js"></script>
+<script type="module" src="${escapeHtml(script)}"></script>
 </body>
 </html>`;
 }
