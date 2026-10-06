@@ -1,81 +1,172 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/server/app.js';
+import type { TabletReader, TabletsState } from '../src/server/chain.js';
 import { configFromEnv } from '../src/server/config.js';
-import { mkdir, rm } from 'node:fs/promises';
-import path from 'node:path';
+import { PREVIEW_PROPHECIES, TABLETS, type Tablet } from '../src/tablets.js';
 
-describe('app local mode', () => {
-  it('lists seeded prophecies and serves gallery HTML', async () => {
-    const dataDir = path.join(process.cwd(), 'data');
-    await mkdir(dataDir, { recursive: true });
-    await rm(path.join(dataDir, 'prophecies.json'), { force: true });
+function tablet(id: number, imageURI: string, description: string, minted = 0): Tablet {
+  return {
+    id,
+    imageURI,
+    description,
+    minted,
+    publisher: TABLETS.owner,
+    keyId: 1,
+    publishedAt: 1791300000,
+    updatedAt: 1791300000,
+    nextPriceWholeGear: Math.min(1000, 2 ** minted),
+  };
+}
 
-    const { app } = createApp(
-      configFromEnv({
-        CHAIN_ID: '84532',
-        GEAR_ADDRESS: '0x5880cD05605A549f1DAb01a53ca61Ee559244bD1',
-      }),
-    );
+function stubReader(tablets: Tablet[], extra: Partial<TabletsState> = {}): TabletReader {
+  const state: TabletsState = {
+    tabletCount: tablets.length,
+    totalSupply: tablets.reduce((n, t) => n + t.minted, 0),
+    paused: false,
+    publishingPaused: false,
+    tablets,
+    ...extra,
+  };
+  return {
+    state: async () => state,
+    tablet: async (id) => tablets.find((t) => t.id === id) ?? null,
+    paused: async () => state.paused,
+  };
+}
 
-    const list = await app.request('http://x/api/prophecies');
-    const body = await list.json();
-    expect(body.source).toBe('local');
-    expect(body.prophecies).toHaveLength(2);
+const failingReader: TabletReader = {
+  state: async () => {
+    throw new Error('RPC down');
+  },
+  tablet: async () => {
+    throw new Error('RPC down');
+  },
+  paused: async () => {
+    throw new Error('RPC down');
+  },
+};
 
-    const byId = Object.fromEntries(body.prophecies.map((p: { id: number }) => [p.id, p]));
-    expect(byId[1].description).toContain('it bends but never breaks');
-    expect(byId[1].imageUri).toBe('/prophecies/1.png');
-    expect(byId[1].nextPriceWholeGear).toBe(1);
-    expect(byId[2].description).toContain('CAPs mind, they float where the bamboo ends');
-    expect(byId[2].imageUri).toBe('/prophecies/2.png');
-    expect(byId[2].nextPriceWholeGear).toBe(1);
+const cfg = configFromEnv({});
+const [p1, p2] = PREVIEW_PROPHECIES;
 
-    const home = await app.request('http://x/');
-    expect(home.status).toBe(200);
-    const html = await home.text();
+describe('gallery (mint page)', () => {
+  it('with no tablets onchain, shows both prophecies as "not yet onchain" previews', async () => {
+    const { app } = createApp(cfg, stubReader([]));
+    const res = await app.request('http://x/');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('No tablets are onchain yet');
+    expect(html).toContain('Not yet onchain');
     expect(html).toContain('/prophecies/1.png');
     expect(html).toContain('/prophecies/2.png');
     expect(html).toContain('it bends but never breaks');
-    expect(html).toContain('CAPs mind, they float where the bamboo ends');
-    expect(html).toContain('Demo mode');
-
-    const detail1 = await app.request('http://x/prophecy/1');
-    expect(detail1.status).toBe(200);
-    const d1 = await detail1.text();
-    expect(d1).toContain('/prophecies/1.png');
-    expect(d1).toContain('shall never B blown');
-
-    const detail2 = await app.request('http://x/prophecy/2');
-    expect(detail2.status).toBe(200);
-    const d2 = await detail2.text();
-    expect(d2).toContain('/prophecies/2.png');
-    expect(d2).toContain('based enough to call it home');
+    expect(html).toContain('based enough to call it home');
+    expect(html).toContain(TABLETS.address.slice(0, 6));
+    expect(html).not.toContain('data-mint=');
+    expect(html).not.toContain('\u2014');
   });
 
-  it('publishes additional local prophecies after seed', async () => {
-    const dataDir = path.join(process.cwd(), 'data');
-    await mkdir(dataDir, { recursive: true });
-    await rm(path.join(dataDir, 'prophecies.json'), { force: true });
+  it('lists onchain tablets with mint buttons and hides previews already published', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description, 3)]));
+    const html = await (await app.request('http://x/')).text();
+    expect(html).toContain('data-mint="1"');
+    expect(html).toContain('Mint copy #4 for 8 GEAR');
+    expect(html).toContain('3 copies minted');
+    // Prophecy 1 is onchain now, Prophecy 2 still a preview.
+    expect(html).not.toContain('href="/preview/1"');
+    expect(html).toContain('href="/preview/2"');
+  });
 
-    const { app } = createApp(
-      configFromEnv({
-        CHAIN_ID: '84532',
-        GEAR_ADDRESS: '0x5880cD05605A549f1DAb01a53ca61Ee559244bD1',
-      }),
-    );
+  it('escapes onchain text and drops non https/ipfs images', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, 'javascript:alert(1)', '<script>x</script>')]));
+    const html = await (await app.request('http://x/')).text();
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).toContain('&lt;script&gt;x&lt;/script&gt;');
+    expect(html).not.toContain('javascript:alert');
+  });
 
-    const pub = await app.request('http://x/api/local/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageUri: 'https://example.com/t.png',
-        description: 'THE ONE WHO IS HURT FOR BEING BASED',
-        publisher: '0xabc',
-      }),
-    });
-    expect(pub.status).toBe(200);
-    const published = await pub.json();
-    expect(published.prophecy.id).toBe(3);
-    expect(published.prophecy.nextPriceWholeGear).toBe(1);
+  it('still renders previews when Base cannot be read', async () => {
+    const { app } = createApp(cfg, failingReader);
+    const res = await app.request('http://x/');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Could not read Base right now');
+    expect(html).toContain('/prophecies/1.png');
+    expect(html).toContain('/prophecies/2.png');
+  });
+});
+
+describe('tablet and preview pages', () => {
+  it('serves an onchain tablet with a mint button', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, 'ipfs://bafyabc/1.png', 'THE FIRST')]));
+    const res = await app.request('http://x/tablet/1');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Prophecy Tablet 1');
+    expect(html).toContain('https://ipfs.io/ipfs/bafyabc/1.png');
+    expect(html).toContain('data-mint="1"');
+    expect(html).toContain('Mint copy #1 for 1 GEAR');
+  });
+
+  it('404s an unpublished tablet and points to the preview', async () => {
+    const { app } = createApp(cfg, stubReader([]));
+    const res = await app.request('http://x/tablet/2');
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain('not published onchain yet');
+    expect(html).toContain('/preview/2');
+  });
+
+  it('redirects old /prophecy/:id links to /tablet/:id', async () => {
+    const { app } = createApp(cfg, stubReader([]));
+    const res = await app.request('http://x/prophecy/1');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/tablet/1');
+  });
+
+  it('serves preview pages with the exact publish values', async () => {
+    const { app } = createApp(cfg, stubReader([]));
+    const html = await (await app.request('http://x/preview/2')).text();
+    expect(html).toContain('Not yet onchain');
+    expect(html).toContain('https://capsmind.gearup.wtf/prophecies/2.png');
+    expect(html).toContain('based enough to call it home');
+    const onchain = await (await createApp(cfg, stubReader([tablet(5, p2.imageURI, p2.description)])).app.request('http://x/preview/2')).text();
+    expect(onchain).toContain('Tablet #5');
+  });
+});
+
+describe('publish page', () => {
+  it('has the key picker, publish and edit forms, and quick-fill values', async () => {
+    const { app } = createApp(cfg, stubReader([]));
+    const res = await app.request('http://x/publish');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    for (const id of ['connectBtn', 'keySelect', 'gateMsg', 'imageUrl', 'description', 'publishBtn', 'editTablet', 'updateBtn']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).toContain('https://capsmind.gearup.wtf/prophecies/1.png');
+    expect(html).toContain('https://capsmind.gearup.wtf/prophecies/2.png');
+    expect(html).toContain('data-fill="1"');
+    expect(html).toContain('data-fill="2"');
+    expect(html).toContain('shall never B blown');
+    expect(html).toContain('src="/app.js"');
+    expect(html).not.toContain('\u2014');
+    // No upload box without Vercel Blob.
+    expect(html).not.toContain('id="imageFile"');
+  });
+});
+
+describe('api', () => {
+  it('reports the deployed contract and pending previews', async () => {
+    const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description)]));
+    const conf = await (await app.request('http://x/api/config')).json();
+    expect(conf.tabletsAddress).toBe(TABLETS.address);
+    expect(conf.chainId).toBe(8453);
+    const list = await (await app.request('http://x/api/tablets')).json();
+    expect(list.tabletCount).toBe(1);
+    expect(list.previews.map((p: { n: number }) => p.n)).toEqual([2]);
+    const one = await app.request('http://x/api/tablets/1');
+    expect((await one.json()).tablet.id).toBe(1);
+    expect((await app.request('http://x/api/tablets/9')).status).toBe(404);
   });
 });

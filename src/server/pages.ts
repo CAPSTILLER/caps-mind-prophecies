@@ -12,7 +12,7 @@ export function page(
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${escapeHtml(title)} · CAPs Mind Prophecies</title>
-<meta name="description" content="Vault 42 prophecies from CAPs mind. Mint tablets with GEAR."/>
+<meta name="description" content="Vault 42 prophecy tablets from CAPs mind on Base. Mint numbered copies with GEAR."/>
 <style>
 :root {
   --bg:#07090f; --panel:#101522; --line:#243049; --text:#e8eefc; --dim:#8b9bb8;
@@ -99,7 +99,7 @@ footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 
 <header>
   <div class="brand">CAPs MIND<small>VAULT 42 PROPHECIES</small></div>
   <nav>
-    <a href="/" class="${active === 'gallery' ? 'on' : ''}">Gallery</a>
+    <a href="/" class="${active === 'gallery' || active === 'detail' ? 'on' : ''}">Tablets</a>
     <a href="/publish" class="${active === 'publish' ? 'on' : ''}">Publish</a>
     <a href="/key" class="${active === 'key' ? 'on' : ''}">Key</a>
   </nav>
@@ -108,7 +108,7 @@ footer { color:var(--dim); font-size:12px; text-align:center; padding:24px 12px 
 <main>
 ${body}
 </main>
-<footer>Bonding mint: 1, 2, 4 … GEAR, capped at 1000. Split 90% treasury / 10% GearVault. American spelling. Prophecies by CAPs mind.</footer>
+<footer>Copy n of each tablet costs min(1000, 2^(n-1)) GEAR: 1, 2, 4 and up, capped at 1000. Split 90% treasury / 10% GearVault. Prophecies by CAPs mind.</footer>
 <script type="module" src="${escapeHtml(script)}"></script>
 </body>
 </html>`;

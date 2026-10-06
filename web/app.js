@@ -3601,12 +3601,12 @@ var init_transaction = __esm({
       }
     };
     TransactionExecutionError = class extends BaseError2 {
-      constructor(cause, { account: account2, docsPath: docsPath8, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+      constructor(cause, { account: account2, docsPath: docsPath8, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
         const prettyArgs = prettyPrint({
-          chain: chain2 && `${chain2?.name} (id: ${chain2?.id})`,
+          chain: chain && `${chain?.name} (id: ${chain?.id})`,
           from: account2?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
@@ -3735,12 +3735,12 @@ var init_contract = __esm({
     init_transaction();
     init_utils3();
     CallExecutionError = class extends BaseError2 {
-      constructor(cause, { account: account_, docsPath: docsPath8, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
+      constructor(cause, { account: account_, docsPath: docsPath8, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value, stateOverride }) {
         const account2 = account_ ? parseAccount(account_) : void 0;
         let prettyArgs = prettyPrint({
           from: account2?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
           data,
           gas,
           gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
@@ -6896,9 +6896,9 @@ function schnorrSign(message, privateKey, auxRand = randomBytes(32)) {
 function schnorrVerify(signature, message, publicKey) {
   const sig = ensureBytes("signature", signature, 64);
   const m = ensureBytes("message", message);
-  const pub = ensureBytes("publicKey", publicKey, 32);
+  const pub2 = ensureBytes("publicKey", publicKey, 32);
   try {
-    const P = lift_x(num(pub));
+    const P = lift_x(num(pub2));
     const r = num(sig.subarray(0, 32));
     if (!inRange(r, _1n6, secp256k1P))
       return false;
@@ -8980,8 +8980,8 @@ var init_chain = __esm({
   "node_modules/viem/_esm/errors/chain.js"() {
     init_base();
     ChainDoesNotSupportContract = class extends BaseError2 {
-      constructor({ blockNumber, chain: chain2, contract }) {
-        super(`Chain "${chain2.name}" does not support contract "${contract.name}".`, {
+      constructor({ blockNumber, chain, contract }) {
+        super(`Chain "${chain.name}" does not support contract "${contract.name}".`, {
           metaMessages: [
             "This could be due to any of the following:",
             ...blockNumber && contract.blockCreated && contract.blockCreated > blockNumber ? [
@@ -8995,11 +8995,11 @@ var init_chain = __esm({
       }
     };
     ChainMismatchError = class extends BaseError2 {
-      constructor({ chain: chain2, currentChainId }) {
-        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain2.id} \u2013 ${chain2.name}).`, {
+      constructor({ chain, currentChainId }) {
+        super(`The current chain of the wallet (id: ${currentChainId}) does not match the target chain for the transaction (id: ${chain.id} \u2013 ${chain.name}).`, {
           metaMessages: [
             `Current Chain ID:  ${currentChainId}`,
-            `Expected Chain ID: ${chain2.id} \u2013 ${chain2.name}`
+            `Expected Chain ID: ${chain.id} \u2013 ${chain.name}`
           ],
           name: "ChainMismatchError"
         });
@@ -9056,17 +9056,17 @@ var init_encodeDeployData = __esm({
 });
 
 // node_modules/viem/_esm/utils/chain/getChainContractAddress.js
-function getChainContractAddress({ blockNumber, chain: chain2, contract: name }) {
-  const contract = chain2?.contracts?.[name];
+function getChainContractAddress({ blockNumber, chain, contract: name }) {
+  const contract = chain?.contracts?.[name];
   if (!contract)
     throw new ChainDoesNotSupportContract({
-      chain: chain2,
+      chain,
       contract: { name }
     });
   if (blockNumber && contract.blockCreated && contract.blockCreated > blockNumber)
     throw new ChainDoesNotSupportContract({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: {
         name,
         blockCreated: contract.blockCreated
@@ -10117,11 +10117,11 @@ init_formatGwei();
 init_base();
 init_transaction();
 var EstimateGasExecutionError = class extends BaseError2 {
-  constructor(cause, { account: account2, docsPath: docsPath8, chain: chain2, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
+  constructor(cause, { account: account2, docsPath: docsPath8, chain, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce, to, value }) {
     const prettyArgs = prettyPrint({
       from: account2?.address,
       to,
-      value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+      value: typeof value !== "undefined" && `${formatEther2(value)} ${chain?.nativeCurrency?.symbol || "ETH"}`,
       data,
       gas,
       gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
@@ -10356,9 +10356,9 @@ async function estimateMaxPriorityFeePerGas(client, args) {
   return internal_estimateMaxPriorityFeePerGas(client, args);
 }
 async function internal_estimateMaxPriorityFeePerGas(client, args) {
-  const { block: block_, chain: chain2 = client.chain, request } = args || {};
+  const { block: block_, chain = client.chain, request } = args || {};
   try {
-    const maxPriorityFeePerGas = chain2?.fees?.maxPriorityFeePerGas ?? chain2?.fees?.defaultPriorityFee;
+    const maxPriorityFeePerGas = chain?.fees?.maxPriorityFeePerGas ?? chain?.fees?.defaultPriorityFee;
     if (typeof maxPriorityFeePerGas === "function") {
       const block = block_ || await getAction(client, getBlock, "getBlock")({});
       const maxPriorityFeePerGas_ = await maxPriorityFeePerGas({
@@ -10395,15 +10395,15 @@ async function estimateFeesPerGas(client, args) {
   return internal_estimateFeesPerGas(client, args);
 }
 async function internal_estimateFeesPerGas(client, args) {
-  const { block: block_, chain: chain2 = client.chain, request, type = "eip1559" } = args || {};
+  const { block: block_, chain = client.chain, request, type = "eip1559" } = args || {};
   const baseFeeMultiplier = await (async () => {
-    if (typeof chain2?.fees?.baseFeeMultiplier === "function")
-      return chain2.fees.baseFeeMultiplier({
+    if (typeof chain?.fees?.baseFeeMultiplier === "function")
+      return chain.fees.baseFeeMultiplier({
         block: block_,
         client,
         request
       });
-    return chain2?.fees?.baseFeeMultiplier ?? 1.2;
+    return chain?.fees?.baseFeeMultiplier ?? 1.2;
   })();
   if (baseFeeMultiplier < 1)
     throw new BaseFeeScalarError();
@@ -10411,8 +10411,8 @@ async function internal_estimateFeesPerGas(client, args) {
   const denominator = 10 ** decimals;
   const multiply = (base2) => base2 * BigInt(Math.round(baseFeeMultiplier * denominator)) / BigInt(denominator);
   const block = block_ ? block_ : await getAction(client, getBlock, "getBlock")({});
-  if (typeof chain2?.fees?.estimateFeesPerGas === "function") {
-    const fees = await chain2.fees.estimateFeesPerGas({
+  if (typeof chain?.fees?.estimateFeesPerGas === "function") {
+    const fees = await chain.fees.estimateFeesPerGas({
       block: block_,
       client,
       multiply,
@@ -10427,7 +10427,7 @@ async function internal_estimateFeesPerGas(client, args) {
       throw new Eip1559FeesNotSupportedError();
     const maxPriorityFeePerGas = typeof request?.maxPriorityFeePerGas === "bigint" ? request.maxPriorityFeePerGas : await internal_estimateMaxPriorityFeePerGas(client, {
       block,
-      chain: chain2,
+      chain,
       request
     });
     const baseFeePerGas = multiply(block.baseFeePerGas);
@@ -10701,7 +10701,7 @@ async function getChainId(client) {
 
 // node_modules/viem/_esm/actions/public/fillTransaction.js
 async function fillTransaction(client, parameters) {
-  const { account: account2 = client.account, accessList, authorizationList, chain: chain2 = client.chain, blobVersionedHashes, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce: nonce_, nonceManager, to, type, value, ...rest } = parameters;
+  const { account: account2 = client.account, accessList, authorizationList, chain = client.chain, blobVersionedHashes, blobs, data, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce: nonce_, nonceManager, to, type, value, ...rest } = parameters;
   const nonce = await (async () => {
     if (!account2)
       return nonce_;
@@ -10710,7 +10710,7 @@ async function fillTransaction(client, parameters) {
     if (typeof nonce_ !== "undefined")
       return nonce_;
     const account_ = parseAccount(account2);
-    const chainId = chain2 ? chain2.id : await getAction(client, getChainId, "getChainId")({});
+    const chainId = chain ? chain.id : await getAction(client, getChainId, "getChainId")({});
     return await nonceManager.consume({
       address: account_.address,
       chainId,
@@ -10718,7 +10718,7 @@ async function fillTransaction(client, parameters) {
     });
   })();
   assertRequest(parameters);
-  const chainFormat = chain2?.formatters?.transactionRequest?.format;
+  const chainFormat = chain?.formatters?.transactionRequest?.format;
   const format2 = chainFormat || formatTransactionRequest;
   const request = format2({
     // Pick out extra data that might exist on the chain's transaction request type.
@@ -10744,7 +10744,7 @@ async function fillTransaction(client, parameters) {
       method: "eth_fillTransaction",
       params: [request]
     });
-    const format3 = chain2?.formatters?.transaction?.format || formatTransaction;
+    const format3 = chain?.formatters?.transaction?.format || formatTransaction;
     const transaction = format3(response.tx);
     delete transaction.blockHash;
     delete transaction.blockNumber;
@@ -10774,15 +10774,15 @@ async function fillTransaction(client, parameters) {
       if (typeof transaction.nonce !== "undefined")
         transaction.nonce = parameters.nonce ?? transaction.nonce;
       const feeMultiplier = await (async () => {
-        if (typeof chain2?.fees?.baseFeeMultiplier === "function") {
+        if (typeof chain?.fees?.baseFeeMultiplier === "function") {
           const block = await getAction(client, getBlock, "getBlock")({});
-          return chain2.fees.baseFeeMultiplier({
+          return chain.fees.baseFeeMultiplier({
             block,
             client,
             request: parameters
           });
         }
-        return chain2?.fees?.baseFeeMultiplier ?? 1.2;
+        return chain?.fees?.baseFeeMultiplier ?? 1.2;
       })();
       if (feeMultiplier < 1)
         throw new BaseFeeScalarError();
@@ -10825,17 +10825,17 @@ async function prepareTransactionRequest(client, args) {
   let request = args;
   request.account ??= client.account;
   request.parameters ??= defaultParameters;
-  const { account: account_, chain: chain2 = client.chain, nonceManager, parameters } = request;
+  const { account: account_, chain = client.chain, nonceManager, parameters } = request;
   const prepareTransactionRequest2 = (() => {
-    if (typeof chain2?.prepareTransactionRequest === "function")
+    if (typeof chain?.prepareTransactionRequest === "function")
       return {
-        fn: chain2.prepareTransactionRequest,
+        fn: chain.prepareTransactionRequest,
         runAt: ["beforeFillTransaction"]
       };
-    if (Array.isArray(chain2?.prepareTransactionRequest))
+    if (Array.isArray(chain?.prepareTransactionRequest))
       return {
-        fn: chain2.prepareTransactionRequest[0],
-        runAt: chain2.prepareTransactionRequest[1].runAt
+        fn: chain.prepareTransactionRequest[0],
+        runAt: chain.prepareTransactionRequest[1].runAt
       };
     return void 0;
   })();
@@ -10845,8 +10845,8 @@ async function prepareTransactionRequest(client, args) {
       return chainId;
     if (typeof request.chainId !== "undefined")
       return request.chainId;
-    if (chain2)
-      return chain2.id;
+    if (chain)
+      return chain.id;
     const chainId_ = await getAction(client, getChainId, "getChainId")({});
     chainId = chainId_;
     return chainId;
@@ -10854,7 +10854,7 @@ async function prepareTransactionRequest(client, args) {
   let account2 = account_ ? parseAccount(account_) : account_;
   let nonce = request.nonce;
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillTransaction")) {
-    request = await prepareTransactionRequest2.fn({ ...request, chain: chain2 }, {
+    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
       client,
       phase: "beforeFillTransaction"
     });
@@ -10942,7 +10942,7 @@ async function prepareTransactionRequest(client, args) {
   };
   const { blobs, gas, kzg, type } = request;
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillParameters")) {
-    request = await prepareTransactionRequest2.fn({ ...request, chain: chain2 }, {
+    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
       client,
       phase: "beforeFillParameters"
     });
@@ -11000,7 +11000,7 @@ async function prepareTransactionRequest(client, args) {
         const block2 = await getBlock2();
         const { maxFeePerGas, maxPriorityFeePerGas } = await internal_estimateFeesPerGas(client, {
           block: block2,
-          chain: chain2,
+          chain,
           request
         });
         if (typeof request.maxPriorityFeePerGas === "undefined" && request.maxFeePerGas && request.maxFeePerGas < maxPriorityFeePerGas)
@@ -11017,7 +11017,7 @@ async function prepareTransactionRequest(client, args) {
         const block2 = await getBlock2();
         const { gasPrice: gasPrice_ } = await internal_estimateFeesPerGas(client, {
           block: block2,
-          chain: chain2,
+          chain,
           request,
           type: "legacy"
         });
@@ -11032,7 +11032,7 @@ async function prepareTransactionRequest(client, args) {
       prepare: account2?.type === "local" ? [] : ["blobVersionedHashes"]
     });
   if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("afterFillParameters"))
-    request = await prepareTransactionRequest2.fn({ ...request, chain: chain2 }, {
+    request = await prepareTransactionRequest2.fn({ ...request, chain }, {
       client,
       phase: "afterFillParameters"
     });
@@ -11902,11 +11902,11 @@ init_base();
 
 // node_modules/viem/_esm/utils/chain/assertCurrentChain.js
 init_chain();
-function assertCurrentChain({ chain: chain2, currentChainId }) {
-  if (!chain2)
+function assertCurrentChain({ chain, currentChainId }) {
+  if (!chain)
     throw new ChainNotFoundError();
-  if (currentChainId !== chain2.id)
-    throw new ChainMismatchError({ chain: chain2, currentChainId });
+  if (currentChainId !== chain.id)
+    throw new ChainMismatchError({ chain, currentChainId });
 }
 
 // node_modules/viem/_esm/actions/wallet/sendTransaction.js
@@ -11927,7 +11927,7 @@ async function sendRawTransaction(client, { serializedTransaction }) {
 // node_modules/viem/_esm/actions/wallet/sendTransaction.js
 var supportsWalletNamespace = new LruMap(128);
 async function sendTransaction(client, parameters) {
-  const { account: account_ = client.account, assertChainId = true, chain: chain2 = client.chain, accessList, authorizationList, blobs, data, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, type, value, ...rest } = parameters;
+  const { account: account_ = client.account, assertChainId = true, chain = client.chain, accessList, authorizationList, blobs, data, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, type, value, ...rest } = parameters;
   if (typeof account_ === "undefined")
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/sendTransaction"
@@ -11951,12 +11951,12 @@ async function sendTransaction(client, parameters) {
     })();
     if (account2?.type === "json-rpc" || account2 === null) {
       let chainId;
-      if (chain2 !== null) {
+      if (chain !== null) {
         chainId = await getAction(client, getChainId, "getChainId")({});
         if (assertChainId)
           assertCurrentChain({
             currentChainId: chainId,
-            chain: chain2
+            chain
           });
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
@@ -12039,7 +12039,7 @@ async function sendTransaction(client, parameters) {
         accessList,
         authorizationList,
         blobs,
-        chain: chain2,
+        chain,
         data: dataSuffix ? concat([data ?? "0x", dataSuffix]) : data,
         gas,
         gasPrice,
@@ -12054,11 +12054,11 @@ async function sendTransaction(client, parameters) {
         ...rest,
         to
       });
-      const serializer = chain2?.serializers?.transaction;
+      const serializer = chain?.serializers?.transaction;
       const signedTransaction = await account2.signTransaction(request, {
         serializer
       });
-      const transactionEnvelope = (chain2 ?? client.chain)?.serializers?.transactionEnvelope;
+      const transactionEnvelope = (chain ?? client.chain)?.serializers?.transactionEnvelope;
       const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
         serializedTransaction: signedTransaction,
         transaction: request
@@ -12245,7 +12245,7 @@ var fallbackTransactionErrorMagicIdentifier = numberToHex(0, {
   size: 32
 });
 async function sendCalls(client, parameters) {
-  const { account: account_ = client.account, chain: chain2 = client.chain, experimental_fallback, experimental_fallbackDelay = 32, forceAtomic = false, id, version: version4 = "2.0.0" } = parameters;
+  const { account: account_ = client.account, chain = client.chain, experimental_fallback, experimental_fallbackDelay = 32, forceAtomic = false, id, version: version4 = "2.0.0" } = parameters;
   const account2 = account_ ? parseAccount(account_) : null;
   let capabilities = parameters.capabilities;
   if (client.dataSuffix && !parameters.capabilities?.dataSuffix) {
@@ -12284,7 +12284,7 @@ async function sendCalls(client, parameters) {
           atomicRequired: forceAtomic,
           calls,
           capabilities,
-          chainId: numberToHex(chain2.id),
+          chainId: numberToHex(chain.id),
           from: account2?.address,
           id,
           version: version4
@@ -12319,7 +12319,7 @@ async function sendCalls(client, parameters) {
         try {
           const value = await sendTransaction(client, {
             account: account2,
-            chain: chain2,
+            chain,
             data: call2.data,
             to: call2.to,
             value: call2.value ? hexToBigInt(call2.value) : void 0
@@ -12341,7 +12341,7 @@ async function sendCalls(client, parameters) {
       return {
         id: concat([
           ...hashes,
-          numberToHex(chain2.id, { size: 32 }),
+          numberToHex(chain.id, { size: 32 }),
           fallbackMagicIdentifier
         ])
       };
@@ -12497,16 +12497,16 @@ function uid(length = 11) {
 
 // node_modules/viem/_esm/clients/createClient.js
 function createClient(parameters) {
-  const { batch, chain: chain2, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
-  const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain2?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
-  const blockTime = chain2?.blockTime ?? 12e3;
+  const { batch, chain, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
+  const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
+  const blockTime = chain?.blockTime ?? 12e3;
   const defaultPollingInterval = Math.min(Math.max(Math.floor(blockTime / 2), 500), 4e3);
   const pollingInterval = parameters.pollingInterval ?? defaultPollingInterval;
   const cacheTime = parameters.cacheTime ?? pollingInterval;
   const account2 = parameters.account ? parseAccount(parameters.account) : void 0;
   const { config, request, value } = parameters.transport({
     account: account2,
-    chain: chain2,
+    chain,
     pollingInterval
   });
   const transport = { ...config, ...value };
@@ -12515,7 +12515,7 @@ function createClient(parameters) {
     batch,
     cacheTime,
     ccipRead,
-    chain: chain2,
+    chain,
     dataSuffix,
     key,
     name,
@@ -12691,19 +12691,19 @@ function packetToBytes(packet) {
 // node_modules/viem/_esm/actions/ens/getEnsAddress.js
 async function getEnsAddress(client, parameters) {
   const { blockNumber, blockTag, coinType, name, gatewayUrls, strict } = parameters;
-  const { chain: chain2 } = client;
+  const { chain } = client;
   const universalResolverAddress = (() => {
     if (parameters.universalResolverAddress)
       return parameters.universalResolverAddress;
-    if (!chain2)
+    if (!chain)
       throw new Error("client chain not configured. universalResolverAddress is required.");
     return getChainContractAddress({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: "ensUniversalResolver"
     });
   })();
-  const tlds = chain2?.ensTlds;
+  const tlds = chain?.ensTlds;
   if (tlds && !tlds.some((tld) => name.endsWith(tld)))
     return null;
   const args = (() => {
@@ -13007,19 +13007,19 @@ init_toHex();
 init_localBatchGatewayRequest();
 async function getEnsText(client, parameters) {
   const { blockNumber, blockTag, key, name, gatewayUrls, strict } = parameters;
-  const { chain: chain2 } = client;
+  const { chain } = client;
   const universalResolverAddress = (() => {
     if (parameters.universalResolverAddress)
       return parameters.universalResolverAddress;
-    if (!chain2)
+    if (!chain)
       throw new Error("client chain not configured. universalResolverAddress is required.");
     return getChainContractAddress({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: "ensUniversalResolver"
     });
   })();
-  const tlds = chain2?.ensTlds;
+  const tlds = chain?.ensTlds;
   if (tlds && !tlds.some((tld) => name.endsWith(tld)))
     return null;
   try {
@@ -13087,15 +13087,15 @@ init_getChainContractAddress();
 init_localBatchGatewayRequest();
 async function getEnsName(client, parameters) {
   const { address, blockNumber, blockTag, coinType = 60n, gatewayUrls, strict } = parameters;
-  const { chain: chain2 } = client;
+  const { chain } = client;
   const universalResolverAddress = (() => {
     if (parameters.universalResolverAddress)
       return parameters.universalResolverAddress;
-    if (!chain2)
+    if (!chain)
       throw new Error("client chain not configured. universalResolverAddress is required.");
     return getChainContractAddress({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: "ensUniversalResolver"
     });
   })();
@@ -13125,21 +13125,21 @@ init_getChainContractAddress();
 init_toHex();
 async function getEnsResolver(client, parameters) {
   const { blockNumber, blockTag, name } = parameters;
-  const { chain: chain2 } = client;
+  const { chain } = client;
   const universalResolverAddress = (() => {
     if (parameters.universalResolverAddress)
       return parameters.universalResolverAddress;
-    if (!chain2)
+    if (!chain)
       throw new Error("client chain not configured. universalResolverAddress is required.");
     return getChainContractAddress({
       blockNumber,
-      chain: chain2,
+      chain,
       contract: "ensUniversalResolver"
     });
   })();
-  const tlds = chain2?.ensTlds;
+  const tlds = chain?.ensTlds;
   if (tlds && !tlds.some((tld) => name.endsWith(tld)))
-    throw new Error(`${name} is not a valid ENS TLD (${tlds?.join(", ")}) for chain "${chain2.name}" (id: ${chain2.id}).`);
+    throw new Error(`${name} is not a valid ENS TLD (${tlds?.join(", ")}) for chain "${chain.name}" (id: ${chain.id}).`);
   const [resolverAddress] = await getAction(client, readContract, "readContract")({
     address: universalResolverAddress,
     abi: [
@@ -14061,12 +14061,12 @@ function hashString(str, seed = 0) {
 }
 
 // node_modules/viem/_esm/utils/chain/defineChain.js
-function defineChain(chain2) {
+function defineChain(chain) {
   const chainInstance = {
     formatters: void 0,
     fees: void 0,
     serializers: void 0,
-    ...chain2
+    ...chain
   };
   function extend(base2) {
     return (fnOrExtended) => {
@@ -17419,9 +17419,9 @@ function serializeSignature({ r, s, to = "hex", v, yParity }) {
 // node_modules/viem/_esm/actions/public/verifyHash.js
 init_call();
 async function verifyHash(client, parameters) {
-  const { address, chain: chain2 = client.chain, hash: hash3, erc6492VerifierAddress: verifierAddress = parameters.universalSignatureVerifierAddress ?? chain2?.contracts?.erc6492Verifier?.address, multicallAddress = parameters.multicallAddress ?? chain2?.contracts?.multicall3?.address, mode = "auto" } = parameters;
-  if (chain2?.verifyHash)
-    return await chain2.verifyHash(client, parameters);
+  const { address, chain = client.chain, hash: hash3, erc6492VerifierAddress: verifierAddress = parameters.universalSignatureVerifierAddress ?? chain?.contracts?.erc6492Verifier?.address, multicallAddress = parameters.multicallAddress ?? chain?.contracts?.multicall3?.address, mode = "auto" } = parameters;
+  if (chain?.verifyHash)
+    return await chain.verifyHash(client, parameters);
   const signature = (() => {
     const signature2 = parameters.signature;
     if (isHex(signature2))
@@ -18478,8 +18478,8 @@ async function resolveTokenWithDecimals(client, parameters) {
   };
 }
 function pickWriteParameters(parameters) {
-  const { account: account2, chain: chain2, gas, maxFeePerGas, maxPriorityFeePerGas, nonce } = parameters;
-  return { account: account2, chain: chain2, gas, maxFeePerGas, maxPriorityFeePerGas, nonce };
+  const { account: account2, chain, gas, maxFeePerGas, maxPriorityFeePerGas, nonce } = parameters;
+  return { account: account2, chain, gas, maxFeePerGas, maxPriorityFeePerGas, nonce };
 }
 function defineCall(call2) {
   return {
@@ -18570,8 +18570,8 @@ async function sendRawTransactionSync(client, { serializedTransaction, throwOnRe
 // node_modules/viem/_esm/actions/wallet/sendTransactionSync.js
 var supportsWalletNamespace2 = new LruMap(128);
 async function sendTransactionSync(client, parameters) {
-  const { account: account_ = client.account, assertChainId = true, chain: chain2 = client.chain, accessList, authorizationList, blobs, data, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, pollingInterval, throwOnReceiptRevert, type, value, ...rest } = parameters;
-  const timeout = parameters.timeout ?? Math.max((chain2?.blockTime ?? 0) * 3, 5e3);
+  const { account: account_ = client.account, assertChainId = true, chain = client.chain, accessList, authorizationList, blobs, data, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, pollingInterval, throwOnReceiptRevert, type, value, ...rest } = parameters;
+  const timeout = parameters.timeout ?? Math.max((chain?.blockTime ?? 0) * 3, 5e3);
   if (typeof account_ === "undefined")
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/sendTransactionSync"
@@ -18595,12 +18595,12 @@ async function sendTransactionSync(client, parameters) {
     })();
     if (account2?.type === "json-rpc" || account2 === null) {
       let chainId;
-      if (chain2 !== null) {
+      if (chain !== null) {
         chainId = await getAction(client, getChainId, "getChainId")({});
         if (assertChainId)
           assertCurrentChain({
             currentChainId: chainId,
-            chain: chain2
+            chain
           });
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
@@ -18694,7 +18694,7 @@ async function sendTransactionSync(client, parameters) {
         accessList,
         authorizationList,
         blobs,
-        chain: chain2,
+        chain,
         data: dataSuffix ? concat([data ?? "0x", dataSuffix]) : data,
         gas,
         gasPrice,
@@ -18709,11 +18709,11 @@ async function sendTransactionSync(client, parameters) {
         ...rest,
         to
       });
-      const serializer = chain2?.serializers?.transaction;
+      const serializer = chain?.serializers?.transaction;
       const signedTransaction = await account2.signTransaction(request, {
         serializer
       });
-      const transactionEnvelope = (chain2 ?? client.chain)?.serializers?.transactionEnvelope;
+      const transactionEnvelope = (chain ?? client.chain)?.serializers?.transactionEnvelope;
       const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
         serializedTransaction: signedTransaction,
         transaction: request
@@ -19067,8 +19067,8 @@ function createPublicClient(parameters) {
 
 // node_modules/viem/_esm/actions/wallet/addChain.js
 init_toHex();
-async function addChain(client, { chain: chain2 }) {
-  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain2;
+async function addChain(client, { chain }) {
+  const { id, name, nativeCurrency, rpcUrls, blockExplorers } = chain;
   await client.request({
     method: "wallet_addEthereumChain",
     params: [
@@ -19185,8 +19185,8 @@ async function requestPermissions(client, permissions) {
 
 // node_modules/viem/_esm/actions/wallet/sendCallsSync.js
 async function sendCallsSync(client, parameters) {
-  const { chain: chain2 = client.chain } = parameters;
-  const timeout = parameters.timeout ?? Math.max((chain2?.blockTime ?? 0) * 3, 5e3);
+  const { chain = client.chain } = parameters;
+  const timeout = parameters.timeout ?? Math.max((chain?.blockTime ?? 0) * 3, 5e3);
   const result = await getAction(client, sendCalls, "sendCalls")(parameters);
   const status = await getAction(client, waitForCallsStatus, "waitForCallsStatus")({
     ...parameters,
@@ -19257,7 +19257,7 @@ init_toHex();
 init_transactionRequest();
 init_assertRequest();
 async function signTransaction(client, parameters) {
-  const { account: account_ = client.account, chain: chain2 = client.chain, ...transaction } = parameters;
+  const { account: account_ = client.account, chain = client.chain, ...transaction } = parameters;
   if (!account_)
     throw new AccountNotFoundError({
       docsPath: "/docs/actions/wallet/signTransaction"
@@ -19268,12 +19268,12 @@ async function signTransaction(client, parameters) {
     ...parameters
   });
   const chainId = await getAction(client, getChainId, "getChainId")({});
-  if (chain2 !== null)
+  if (chain !== null)
     assertCurrentChain({
       currentChainId: chainId,
-      chain: chain2
+      chain
     });
-  const formatters2 = chain2?.formatters || client.chain?.formatters;
+  const formatters2 = chain?.formatters || client.chain?.formatters;
   const format2 = formatters2?.transactionRequest?.format || formatTransactionRequest;
   if (account2.signTransaction)
     return account2.signTransaction({
@@ -19414,17 +19414,152 @@ function createTransport({ key, methods, name, request, retryCount = 3, retryDel
 }
 
 // node_modules/viem/_esm/clients/transports/custom.js
-function custom(provider, config = {}) {
+function custom(provider2, config = {}) {
   const { key = "custom", methods, name = "Custom Provider", retryDelay } = config;
   return ({ retryCount: defaultRetryCount }) => createTransport({
     key,
     methods,
     name,
-    request: provider.request.bind(provider),
+    request: provider2.request.bind(provider2),
     retryCount: config.retryCount ?? defaultRetryCount,
     retryDelay,
     type: "custom"
   });
+}
+
+// node_modules/viem/_esm/clients/transports/fallback.js
+init_node();
+init_rpc();
+function fallback(transports_, config = {}) {
+  const { key = "fallback", name = "Fallback", rank = false, shouldThrow: shouldThrow_ = shouldThrow, retryCount, retryDelay } = config;
+  return (({ chain, pollingInterval = 4e3, timeout, ...rest }) => {
+    let transports = transports_;
+    let onResponse = () => {
+    };
+    const transport = createTransport({
+      key,
+      name,
+      async request({ method, params }) {
+        let includes;
+        const fetch2 = async (i = 0) => {
+          const transport2 = transports[i]({
+            ...rest,
+            chain,
+            retryCount: 0,
+            timeout
+          });
+          try {
+            const response = await transport2.request({
+              method,
+              params
+            });
+            onResponse({
+              method,
+              params,
+              response,
+              transport: transport2,
+              status: "success"
+            });
+            return response;
+          } catch (err) {
+            onResponse({
+              error: err,
+              method,
+              params,
+              transport: transport2,
+              status: "error"
+            });
+            if (shouldThrow_(err))
+              throw err;
+            if (i === transports.length - 1)
+              throw err;
+            includes ??= transports.slice(i + 1).some((transport3) => {
+              const { include, exclude } = transport3({ chain }).config.methods || {};
+              if (include)
+                return include.includes(method);
+              if (exclude)
+                return !exclude.includes(method);
+              return true;
+            });
+            if (!includes)
+              throw err;
+            return fetch2(i + 1);
+          }
+        };
+        return fetch2();
+      },
+      retryCount,
+      retryDelay,
+      type: "fallback"
+    }, {
+      onResponse: (fn) => onResponse = fn,
+      transports: transports.map((fn) => fn({ chain, retryCount: 0 }))
+    });
+    if (rank) {
+      const rankOptions = typeof rank === "object" ? rank : {};
+      rankTransports({
+        chain,
+        interval: rankOptions.interval ?? pollingInterval,
+        onTransports: (transports_2) => transports = transports_2,
+        ping: rankOptions.ping,
+        sampleCount: rankOptions.sampleCount,
+        timeout: rankOptions.timeout,
+        transports,
+        weights: rankOptions.weights
+      });
+    }
+    return transport;
+  });
+}
+function shouldThrow(error) {
+  if ("code" in error && typeof error.code === "number") {
+    if (error.code === TransactionRejectedRpcError.code || error.code === UserRejectedRequestError.code || error.code === WalletConnectSessionSettlementError.code || ExecutionRevertedError.nodeMessage.test(error.message) || error.code === 5e3)
+      return true;
+  }
+  return false;
+}
+function rankTransports({ chain, interval = 4e3, onTransports, ping, sampleCount = 10, timeout = 1e3, transports, weights = {} }) {
+  const { stability: stabilityWeight = 0.7, latency: latencyWeight = 0.3 } = weights;
+  const samples = [];
+  const rankTransports_ = async () => {
+    const sample = await Promise.all(transports.map(async (transport) => {
+      const transport_ = transport({ chain, retryCount: 0, timeout });
+      const start = Date.now();
+      let end;
+      let success;
+      try {
+        await (ping ? ping({ transport: transport_ }) : transport_.request({ method: "net_listening" }));
+        success = 1;
+      } catch {
+        success = 0;
+      } finally {
+        end = Date.now();
+      }
+      const latency = end - start;
+      return { latency, success };
+    }));
+    samples.push(sample);
+    if (samples.length > sampleCount)
+      samples.shift();
+    const maxLatency = Math.max(...samples.map((sample2) => Math.max(...sample2.map(({ latency }) => latency))));
+    const scores = transports.map((_, i) => {
+      const latencies = samples.map((sample2) => sample2[i].latency);
+      const meanLatency = latencies.reduce((acc, latency) => acc + latency, 0) / latencies.length;
+      const latencyScore = 1 - meanLatency / maxLatency;
+      const successes = samples.map((sample2) => sample2[i].success);
+      const stabilityScore = successes.reduce((acc, success) => acc + success, 0) / successes.length;
+      if (stabilityScore === 0)
+        return [0, i];
+      return [
+        latencyWeight * latencyScore + stabilityWeight * stabilityScore,
+        i
+      ];
+    }).sort((a, b) => b[0] - a[0]);
+    onTransports(scores.map(([, i]) => transports[i]));
+    await wait(interval);
+    rankTransports_();
+  };
+  rankTransports_();
 }
 
 // node_modules/viem/_esm/clients/transports/http.js
@@ -19457,11 +19592,11 @@ function getSignalId(signal) {
 }
 function http(url, config = {}) {
   const { batch, fetchFn, fetchOptions, key = "http", maxResponseBodySize, methods, name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay, raw } = config;
-  return ({ chain: chain2, retryCount: retryCount_, timeout: timeout_ }) => {
+  return ({ chain, retryCount: retryCount_, timeout: timeout_ }) => {
     const { batchSize = 1e3, wait: wait2 = 0 } = typeof batch === "object" ? batch : {};
     const retryCount = config.retryCount ?? retryCount_;
     const timeout = timeout_ ?? config.timeout ?? 1e4;
-    const url_ = url || chain2?.rpcUrls.default.http[0];
+    const url_ = url || chain?.rpcUrls.default.http[0];
     if (!url_)
       throw new UrlRequiredError();
     const rpcClient = getHttpRpcClient(url_, {
@@ -19518,6 +19653,13 @@ function http(url, config = {}) {
     });
   };
 }
+
+// node_modules/viem/_esm/index.js
+init_base();
+init_contract();
+init_rpc();
+init_getAddress();
+init_toHex();
 
 // node_modules/viem/_esm/op-stack/contracts.js
 var contracts = {
@@ -19696,75 +19838,65 @@ var basePreconf = /* @__PURE__ */ defineChain({
   }
 });
 
-// node_modules/viem/_esm/chains/definitions/baseSepolia.js
-var sourceId2 = 11155111;
-var baseSepolia = /* @__PURE__ */ defineChain({
-  ...chainConfig,
-  id: 84532,
-  network: "base-sepolia",
-  name: "Base Sepolia",
-  nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: {
-    default: {
-      http: ["https://sepolia.base.org"]
-    }
-  },
-  blockExplorers: {
-    default: {
-      name: "Basescan",
-      url: "https://sepolia.basescan.org",
-      apiUrl: "https://api-sepolia.basescan.org/api"
-    }
-  },
-  contracts: {
-    ...chainConfig.contracts,
-    disputeGameFactory: {
-      [sourceId2]: {
-        address: "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1"
-      }
-    },
-    l2OutputOracle: {
-      [sourceId2]: {
-        address: "0x84457ca9D0163FbC4bbfe4Dfbb20ba46e48DF254"
-      }
-    },
-    portal: {
-      [sourceId2]: {
-        address: "0x49f53e41452c74589e85ca1677426ba426459e85",
-        blockCreated: 4446677
-      }
-    },
-    l1StandardBridge: {
-      [sourceId2]: {
-        address: "0xfd0Bf71F60660E2f608ed56e1659C450eB113120",
-        blockCreated: 4446677
-      }
-    },
-    multicall3: {
-      address: "0xca11bde05977b3631167028862be2a173976ca11",
-      blockCreated: 1059647
-    }
-  },
-  testnet: true,
-  sourceId: sourceId2
-});
-var baseSepoliaPreconf = /* @__PURE__ */ defineChain({
-  ...baseSepolia,
-  experimental_preconfirmationTime: 200,
-  rpcUrls: {
-    default: {
-      http: ["https://sepolia-preconf.base.org"]
-    }
-  }
-});
-
 // src/abis.ts
-var keyAbi = [
+var tabletsAbi = [
+  // ---- reads ----
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "tabletCount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  { type: "function", name: "publishingPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
   {
     type: "function",
-    name: "balanceOf",
+    name: "getTablet",
     stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
+    inputs: [{ name: "tabletId", type: "uint256" }],
+    outputs: [
+      { name: "imageURI", type: "string" },
+      { name: "description", type: "string" },
+      { name: "minted", type: "uint256" },
+      { name: "publisher", type: "address" },
+      { name: "keyId", type: "uint256" },
+      { name: "publishedAt", type: "uint64" },
+      { name: "updatedAt", type: "uint64" },
+      { name: "nextPriceWholeGear", type: "uint256" }
+    ]
+  },
+  {
+    type: "function",
+    name: "nextPrice",
+    stateMutability: "view",
+    inputs: [{ name: "tabletId", type: "uint256" }],
+    outputs: [{ type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "nextPriceWhole",
+    stateMutability: "view",
+    inputs: [{ name: "tabletId", type: "uint256" }],
+    outputs: [{ type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "priceForSerial",
+    stateMutability: "pure",
+    inputs: [{ name: "n", type: "uint256" }],
+    outputs: [{ type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "tabletOf",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "serialOf",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ type: "uint256" }]
   },
   {
@@ -19776,82 +19908,16 @@ var keyAbi = [
   },
   {
     type: "function",
-    name: "totalSupply",
+    name: "tokenURI",
     stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }]
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "string" }]
   },
   {
     type: "function",
-    name: "mint",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "to", type: "address" }],
-    outputs: [{ type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "canMintKey",
+    name: "isPublishEligible",
     stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ type: "bool" }]
-  },
-  {
-    type: "function",
-    name: "keyHoldAmount",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }]
-  }
-];
-var propheciesAbi = [
-  {
-    type: "function",
-    name: "prophecyCount",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "getProphecy",
-    stateMutability: "view",
-    inputs: [{ name: "prophecyId", type: "uint256" }],
-    outputs: [
-      { name: "imageUri", type: "string" },
-      { name: "description", type: "string" },
-      { name: "minted", type: "uint256" },
-      { name: "publisher", type: "address" },
-      { name: "publishedAt", type: "uint64" },
-      { name: "nextPriceWholeGear", type: "uint256" },
-      { name: "keyId", type: "uint256" }
-    ]
-  },
-  {
-    type: "function",
-    name: "nextPrice",
-    stateMutability: "view",
-    inputs: [{ name: "prophecyId", type: "uint256" }],
-    outputs: [{ type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "nextPriceWhole",
-    stateMutability: "view",
-    inputs: [{ name: "prophecyId", type: "uint256" }],
-    outputs: [{ type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "priceForMintNumber",
-    stateMutability: "pure",
-    inputs: [{ name: "n", type: "uint256" }],
-    outputs: [{ type: "uint256" }]
-  },
-  {
-    type: "function",
-    name: "canPublish",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
+    inputs: [{ name: "keyId", type: "uint256" }],
     outputs: [{ type: "bool" }]
   },
   {
@@ -19866,83 +19932,129 @@ var propheciesAbi = [
   },
   {
     type: "function",
-    name: "isPublishEligible",
-    stateMutability: "view",
-    inputs: [{ name: "keyId", type: "uint256" }],
-    outputs: [{ type: "bool" }]
-  },
-  {
-    type: "function",
-    name: "publishingPaused",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "bool" }]
-  },
-  {
-    type: "function",
     name: "canManageEligibility",
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ type: "bool" }]
   },
+  // ---- writes ----
   {
     type: "function",
-    name: "publish",
+    name: "publishTablet",
     stateMutability: "nonpayable",
     inputs: [
       { name: "keyId", type: "uint256" },
-      { name: "imageUri", type: "string" },
+      { name: "imageURI", type: "string" },
       { name: "description", type: "string" }
     ],
-    outputs: [{ type: "uint256" }]
+    outputs: [{ name: "tabletId", type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "updateTablet",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "keyId", type: "uint256" },
+      { name: "tabletId", type: "uint256" },
+      { name: "imageURI", type: "string" },
+      { name: "description", type: "string" }
+    ],
+    outputs: []
   },
   {
     type: "function",
     name: "mint",
     stateMutability: "nonpayable",
-    inputs: [{ name: "prophecyId", type: "uint256" }],
+    inputs: [
+      { name: "tabletId", type: "uint256" },
+      { name: "maxPrice", type: "uint256" }
+    ],
+    outputs: [{ name: "tokenId", type: "uint256" }]
+  },
+  // ---- events ----
+  {
+    type: "event",
+    name: "TabletPublished",
+    inputs: [
+      { name: "tabletId", type: "uint256", indexed: true },
+      { name: "keyId", type: "uint256", indexed: true },
+      { name: "publisher", type: "address", indexed: true },
+      { name: "imageURI", type: "string", indexed: false },
+      { name: "description", type: "string", indexed: false }
+    ]
+  },
+  {
+    type: "event",
+    name: "TabletMinted",
+    inputs: [
+      { name: "tabletId", type: "uint256", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+      { name: "minter", type: "address", indexed: true },
+      { name: "serial", type: "uint256", indexed: false },
+      { name: "pricePaid", type: "uint256", indexed: false }
+    ]
+  },
+  // ---- errors (so wallets and the site can explain reverts) ----
+  { type: "error", name: "NotPublisher", inputs: [] },
+  { type: "error", name: "NotEligibilityAdmin", inputs: [] },
+  { type: "error", name: "KeyNotEligible", inputs: [] },
+  { type: "error", name: "PublishingPausedError", inputs: [] },
+  { type: "error", name: "PausedError", inputs: [] },
+  { type: "error", name: "BadTablet", inputs: [] },
+  { type: "error", name: "BadKey", inputs: [] },
+  { type: "error", name: "BadToken", inputs: [] },
+  { type: "error", name: "EmptyImage", inputs: [] },
+  { type: "error", name: "EmptyDescription", inputs: [] },
+  { type: "error", name: "ImageTooLong", inputs: [] },
+  { type: "error", name: "DescriptionTooLong", inputs: [] },
+  {
+    type: "error",
+    name: "PriceAboveMax",
+    inputs: [
+      { name: "price", type: "uint256" },
+      { name: "maxPrice", type: "uint256" }
+    ]
+  },
+  { type: "error", name: "ERC721NonexistentToken", inputs: [{ name: "tokenId", type: "uint256" }] },
+  { type: "error", name: "SafeERC20FailedOperation", inputs: [{ name: "token", type: "address" }] },
+  {
+    type: "error",
+    name: "ERC20InsufficientBalance",
+    inputs: [
+      { name: "sender", type: "address" },
+      { name: "balance", type: "uint256" },
+      { name: "needed", type: "uint256" }
+    ]
+  },
+  {
+    type: "error",
+    name: "ERC20InsufficientAllowance",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "allowance", type: "uint256" },
+      { name: "needed", type: "uint256" }
+    ]
+  }
+];
+var capsMindKeyViewAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
     outputs: [{ type: "uint256" }]
   },
   {
     type: "function",
-    name: "setPublishEligible",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "keyId", type: "uint256" },
-      { name: "eligible", type: "bool" }
-    ],
-    outputs: []
-  },
-  {
-    type: "function",
-    name: "pausePublishing",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "paused_", type: "bool" }],
-    outputs: []
-  },
-  {
-    type: "function",
-    name: "capsMindKey",
+    name: "ownerOf",
     stateMutability: "view",
-    inputs: [],
+    inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ type: "address" }]
   },
-  {
-    type: "function",
-    name: "gear",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "address" }]
-  }
+  { type: "function", name: "totalMinted", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] }
 ];
 var erc20Abi2 = [
-  {
-    type: "function",
-    name: "decimals",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint8" }]
-  },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
   {
     type: "function",
     name: "approve",
@@ -19972,378 +20084,690 @@ var erc20Abi2 = [
   }
 ];
 
+// src/tablets.ts
+var TABLETS = {
+  /** CapsMindProphecies (Prophecy Tablets), deployed by Bankr. Verified onchain: name, symbol, owner, wiring. */
+  address: "0x43b7d848aa48ef002eb7b7c680e0fbb82bc97f0f",
+  name: "CAPs Mind Prophecy Tablets",
+  symbol: "CAPSPROP",
+  owner: "0x1a72f7314297B0b8f6808A9248969A8108F49890",
+  chainId: 8453,
+  chainName: "Base",
+  explorer: "https://basescan.org",
+  /** CAPs Mind key (Bankr build). Holders publish and edit tablets. */
+  keyAddress: "0x00635ca44339c7c194ef5bc87bf2cd6df04a666d",
+  gearAddress: "0x5880cD05605A549f1DAb01a53ca61Ee559244bD1",
+  gearDecimals: 6,
+  maxPriceGear: 1e3,
+  keyHoldGear: 2e6,
+  maxImageUriBytes: 1024,
+  maxDescriptionBytes: 2048,
+  siteOrigin: "https://capsmind.gearup.wtf",
+  /** Read RPCs with CORS, tried in order (browser and server). */
+  readRpcs: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"],
+  ipfsGateway: "https://ipfs.io/ipfs/"
+};
+var PREVIEW_PROPHECIES = [
+  {
+    n: 1,
+    path: "/prophecies/1.png",
+    imageURI: `${TABLETS.siteOrigin}/prophecies/1.png`,
+    description: "CAPs mind, it bends but never breaks, locked in tight by a vault unknown, time is a friend and shall never B blown..."
+  },
+  {
+    n: 2,
+    path: "/prophecies/2.png",
+    imageURI: `${TABLETS.siteOrigin}/prophecies/2.png`,
+    description: "CAPs mind, they float where the bamboo ends, black and white against the black above, soft enough to survive the void and based enough to call it home..."
+  }
+];
+function isAllowedImageUri(uri) {
+  const u = uri.trim();
+  if (/^ipfs:\/\/.+/i.test(u)) return true;
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === "https:" && !!parsed.hostname;
+  } catch {
+    return false;
+  }
+}
+function displayImageUrl(uri) {
+  const u = (uri || "").trim();
+  if (/^ipfs:\/\//i.test(u)) return TABLETS.ipfsGateway + u.slice(7).replace(/^ipfs\//i, "");
+  if (u.startsWith(TABLETS.siteOrigin + "/")) return u.slice(TABLETS.siteOrigin.length);
+  if (u.startsWith("/") && !u.startsWith("//")) return u;
+  if (/^https:\/\//i.test(u)) return u;
+  return "";
+}
+function sameImage(a, b) {
+  const norm = (s) => displayImageUrl(s).toLowerCase();
+  return norm(a) !== "" && norm(a) === norm(b);
+}
+function tabletForPreview(p, tablets) {
+  return tablets.find((t) => sameImage(t.imageURI, p.imageURI));
+}
+function byteLength(s) {
+  return new TextEncoder().encode(s).length;
+}
+var TABLET_ERROR_TEXT = {
+  NotPublisher: "This wallet does not own that CAPs Mind key. Pick a key ID this wallet holds.",
+  NotEligibilityAdmin: "Only a CAPs Mind holder who also holds 2,000,000 GEAR can do this.",
+  KeyNotEligible: "That CAPs Mind key is locked from publishing. A CAPs Mind holder with 2,000,000 GEAR can unlock it.",
+  PublishingPausedError: "Publishing is paused right now. A CAPs Mind holder with 2,000,000 GEAR can turn it back on.",
+  PausedError: "The contract is paused by its owner. Publishing, edits and mints are stopped for now.",
+  BadTablet: "That tablet does not exist yet.",
+  BadKey: "That CAPs Mind key ID does not exist.",
+  BadToken: "That copy does not exist.",
+  EmptyImage: "Add an image link first.",
+  EmptyDescription: "Add a description first.",
+  ImageTooLong: "The image link is too long (1024 bytes max).",
+  DescriptionTooLong: "The description is too long (2048 bytes max).",
+  PriceAboveMax: "Someone minted just before you, so the price went up. Check the new price and try again.",
+  ERC721NonexistentToken: "That token ID has not been minted yet.",
+  SafeERC20FailedOperation: "The GEAR transfer failed. Check your GEAR balance and approval, then try again.",
+  ERC20InsufficientBalance: "This wallet does not have enough GEAR for this mint.",
+  ERC20InsufficientAllowance: "The GEAR approval is too low. Approve again, then mint."
+};
+
 // web/client.ts
-var cfg;
+var TABLETS_ADDR = getAddress(TABLETS.address);
+var KEY_ADDR = getAddress(TABLETS.keyAddress);
+var GEAR_ADDR = getAddress(TABLETS.gearAddress);
+var MAX_KEY_SCAN = 500;
+var pub = createPublicClient({
+  chain: base,
+  transport: fallback(TABLETS.readRpcs.map((u) => http(u))),
+  batch: { multicall: true }
+});
+var info = window.__TABLETS_PAGE__ || { page: "gallery" };
 var account = null;
-var publishKeyId = null;
-function chain() {
-  return cfg.chainId === 8453 ? base : baseSepolia;
+var walletChainId = null;
+var busy = false;
+var $ = (id) => document.getElementById(id);
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function publicClient() {
-  return createPublicClient({ chain: chain(), transport: http(cfg.rpcUrl) });
+function short(a) {
+  return a.slice(0, 6) + "\u2026" + a.slice(-4);
 }
-function short(addr) {
-  return addr.slice(0, 6) + "\u2026" + addr.slice(-4);
+function txLink(hash3) {
+  return `<a href="${TABLETS.explorer}/tx/${esc(hash3)}" target="_blank" rel="noopener">${short(hash3)}</a>`;
 }
-function setChip(text) {
-  const el = document.getElementById("walletChip");
+function setText(id, text) {
+  const el = $(id);
   if (el) el.textContent = text;
 }
-async function loadConfig() {
-  const res = await fetch("/api/config");
-  cfg = await res.json();
+function setHtml(id, html) {
+  const el = $(id);
+  if (el) el.innerHTML = html;
+}
+function showMsg(el, kind, html) {
+  if (!el) return;
+  el.className = "msg show" + (kind === "info" ? "" : " " + kind);
+  el.innerHTML = html;
+}
+function provider() {
+  return window.ethereum;
+}
+function gear(raw) {
+  return Number(formatUnits(raw, TABLETS.gearDecimals)).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+function explain(err) {
+  if (err instanceof BaseError2) {
+    if (err.walk((e2) => e2 instanceof UserRejectedRequestError)) return "You rejected the request in your wallet. Nothing was sent.";
+    const reverted = err.walk((e2) => e2 instanceof ContractFunctionRevertedError);
+    const name = reverted?.data?.errorName;
+    if (name && TABLET_ERROR_TEXT[name]) return TABLET_ERROR_TEXT[name];
+    if (name) return `The contract rejected this (${name}).`;
+    return err.shortMessage || err.message;
+  }
+  const e = err;
+  if (e?.code === 4001) return "You rejected the request in your wallet. Nothing was sent.";
+  return e?.message || String(err);
+}
+async function readWalletChain() {
+  const eth = provider();
+  if (!eth) return;
+  try {
+    walletChainId = Number(await eth.request({ method: "eth_chainId" }));
+  } catch {
+    walletChainId = null;
+  }
+}
+async function switchToBase() {
+  const eth = provider();
+  if (!eth) return false;
+  const chainId = toHex(TABLETS.chainId);
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  } catch (err) {
+    if (err?.code === 4902) {
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId,
+            chainName: "Base",
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["https://mainnet.base.org"],
+            blockExplorerUrls: [TABLETS.explorer]
+          }
+        ]
+      });
+    }
+  }
+  await readWalletChain();
+  return walletChainId === TABLETS.chainId;
 }
 async function connect() {
-  if (!window.ethereum) {
-    alert("No wallet found. Install MetaMask, Rabby, or Coinbase Wallet.");
-    return null;
+  const eth = provider();
+  if (!eth) {
+    alert("No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.");
+    return false;
   }
-  const accounts = await window.ethereum.request({
-    method: "eth_requestAccounts"
-  });
-  account = accounts[0] || null;
-  if (!account) return null;
-  const target = `0x${cfg.chainId.toString(16)}`;
+  const accounts = await eth.request({ method: "eth_requestAccounts" });
+  account = accounts[0] ? getAddress(accounts[0]) : null;
+  await readWalletChain();
+  if (account && walletChainId !== TABLETS.chainId) await switchToBase();
+  await onWalletChanged();
+  return !!account && walletChainId === TABLETS.chainId;
+}
+async function ensureReady(msgEl) {
   try {
-    await window.ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: target }]
-    });
-  } catch {
-  }
-  setChip(short(account));
-  return account;
-}
-function disconnect() {
-  account = null;
-  publishKeyId = null;
-  setChip("Wallet disconnected");
-  void refreshPublishGate();
-  void refreshDetail();
-  const mintBtn = document.getElementById("mintBtn");
-  if (mintBtn) mintBtn.disabled = true;
-}
-async function walletClient() {
-  if (!window.ethereum || !account) throw new Error("Connect wallet first");
-  return createWalletClient({
-    account,
-    chain: chain(),
-    transport: custom(window.ethereum)
-  });
-}
-async function findEligibleKey(addr) {
-  if (!cfg.live) {
-    return { ok: true, keyId: 1, publishingPaused: false, reason: "Local demo: anyone can publish." };
-  }
-  const client = publicClient();
-  const props = cfg.propheciesAddress;
-  const keyAddr = cfg.keyAddress;
-  const publishingPaused = await client.readContract({
-    address: props,
-    abi: propheciesAbi,
-    functionName: "publishingPaused"
-  });
-  if (publishingPaused) {
-    return {
-      ok: false,
-      keyId: null,
-      publishingPaused: true,
-      reason: "Publishing is paused for all Caps Mind keys."
-    };
-  }
-  const supply = await client.readContract({
-    address: keyAddr,
-    abi: keyAbi,
-    functionName: "totalSupply"
-  });
-  const n = Number(supply);
-  for (let id = 1; id <= n; id++) {
-    try {
-      const owner = await client.readContract({
-        address: keyAddr,
-        abi: keyAbi,
-        functionName: "ownerOf",
-        args: [BigInt(id)]
-      });
-      if (owner.toLowerCase() !== addr.toLowerCase()) continue;
-      const eligible = await client.readContract({
-        address: props,
-        abi: propheciesAbi,
-        functionName: "canPublishWithKey",
-        args: [addr, BigInt(id)]
-      });
-      if (eligible) {
-        return {
-          ok: true,
-          keyId: id,
-          publishingPaused: false,
-          reason: `Eligible Caps Mind key #${id}`
-        };
+    if (!account) {
+      if (!await connect()) {
+        if (account) showMsg(msgEl, "bad", "Switch your wallet to Base and try again.");
+        return false;
       }
-    } catch {
     }
+    await readWalletChain();
+    if (walletChainId !== TABLETS.chainId && !await switchToBase()) {
+      showMsg(msgEl, "bad", "Your wallet is not on Base. Switch to Base and try again.");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    showMsg(msgEl, "bad", esc(explain(e)));
+    return false;
   }
-  const bal = await client.readContract({
-    address: keyAddr,
-    abi: keyAbi,
-    functionName: "balanceOf",
-    args: [addr]
-  });
-  if (bal === 0n) {
-    return {
-      ok: false,
-      keyId: null,
-      publishingPaused: false,
-      reason: "This wallet does not hold a CAPs Mind Key NFT."
-    };
+}
+function walletClient() {
+  const eth = provider();
+  if (!eth || !account) throw new Error("Connect your wallet first.");
+  return createWalletClient({ account, chain: base, transport: custom(eth) });
+}
+async function renderWalletLine() {
+  setText("walletChip", account ? short(account) : "Wallet disconnected");
+  const cb = $("connectBtn");
+  if (cb) cb.textContent = account ? "Reconnect" : "Connect wallet";
+  const line = $("walletLine");
+  if (!line) return;
+  if (!account) {
+    line.textContent = "Connect a wallet on Base to mint. You pay in GEAR.";
+    return;
   }
+  if (walletChainId !== TABLETS.chainId) {
+    line.innerHTML = '<span class="bad">Wrong network. Switch your wallet to Base.</span>';
+    return;
+  }
+  try {
+    const bal = await pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "balanceOf", args: [account] });
+    line.textContent = `${short(account)} on Base \xB7 ${gear(bal)} GEAR`;
+  } catch {
+    line.textContent = `${short(account)} on Base`;
+  }
+}
+async function onWalletChanged() {
+  await renderWalletLine();
+  if (info.page === "publish") await refreshPublish();
+}
+async function readTablet(id) {
+  const row = await pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "getTablet", args: [BigInt(id)] });
   return {
-    ok: false,
-    keyId: null,
-    publishingPaused: false,
-    reason: "Your Caps Mind key(s) are locked out of publishing."
+    id,
+    imageURI: row[0],
+    description: row[1],
+    minted: Number(row[2]),
+    publisher: row[3],
+    keyId: Number(row[4]),
+    publishedAt: Number(row[5]),
+    updatedAt: Number(row[6]),
+    nextPriceWholeGear: Number(row[7])
   };
 }
-async function refreshGallery() {
-  const root = document.getElementById("gallery");
-  if (!root) return;
-  const res = await fetch("/api/prophecies");
-  const data = await res.json();
-  if (data.error) {
-    root.innerHTML = `<div class="empty bad">${data.error}</div>`;
-    return;
-  }
-  const list = data.prophecies || [];
-  if (!list.length) {
-    root.innerHTML = '<div class="empty">No prophecies yet. Cap can publish from <a href="/publish">Publish</a>.</div>';
-    return;
-  }
-  root.innerHTML = list.map(
-    (p) => `<a class="card" href="/prophecy/${p.id}">
-      <img class="shot" src="${escapeAttr(p.imageUri)}" alt="Prophecy ${p.id}"/>
-      <div class="body">
-        <div class="desc">${escapeHtml(p.description)}</div>
-        <div class="meta"><span>#${p.id}</span><span>${p.nextPriceWholeGear} GEAR next</span></div>
-        <div class="meta"><span>${p.minted} minted</span><span>open \u2192</span></div>
-      </div>
-    </a>`
-  ).join("");
+function renderTabletNumbers(t) {
+  const detail = info.page === "tablet";
+  document.querySelectorAll(`[data-minted="${t.id}"]`).forEach((el) => {
+    el.textContent = detail ? String(t.minted) : `${t.minted} ${t.minted === 1 ? "copy" : "copies"} minted`;
+  });
+  document.querySelectorAll(`[data-price="${t.id}"]`).forEach((el) => {
+    el.textContent = detail ? `#${t.minted + 1} for ${t.nextPriceWholeGear} GEAR` : `${t.nextPriceWholeGear} GEAR next`;
+  });
+  document.querySelectorAll(`[data-mint="${t.id}"]`).forEach((b) => {
+    b.textContent = `Mint copy #${t.minted + 1} for ${t.nextPriceWholeGear} GEAR`;
+  });
 }
-async function refreshDetail() {
-  const id = window.__PROPHECY_ID__;
-  if (!id) return;
-  const res = await fetch(`/api/prophecies/${id}`);
-  const data = await res.json();
-  const banner = document.getElementById("modeBanner");
-  if (banner) {
-    banner.innerHTML = cfg.live ? `<b>Onchain mint.</b> Approve GEAR, then mint. Curve caps at ${cfg.maxPriceGear} GEAR.` : `<b>Local demo mint.</b> No GEAR pulled. Wire contracts to go live.`;
-  }
-  if (data.error || !data.prophecy) {
-    const t = document.getElementById("propText");
-    if (t) t.textContent = data.error || "Not found";
-    return;
-  }
-  const p = data.prophecy;
-  const img = document.getElementById("propImage");
-  if (img) img.src = p.imageUri;
-  const text = document.getElementById("propText");
-  if (text) text.textContent = p.description;
-  setText("propMinted", String(p.minted));
-  setText("propPrice", `${p.nextPriceWholeGear} GEAR`);
-  setText("propPublisher", p.publisher);
-  setText(
-    "propWhen",
-    p.publishedAt ? new Date(p.publishedAt * 1e3).toLocaleString() : "-"
-  );
-  const mintBtn = document.getElementById("mintBtn");
-  if (mintBtn) mintBtn.disabled = !account;
-}
-function setText(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
-}
-async function refreshPublishGate() {
-  const gate = document.getElementById("publishGate");
-  const btn = document.getElementById("publishBtn");
-  const pauseNote = document.getElementById("publishPauseNote");
-  if (!gate) return;
-  if (!account) {
-    publishKeyId = null;
-    gate.textContent = "Connect a wallet that holds an eligible CAPs Mind Key to publish.";
-    if (btn) btn.disabled = true;
-    if (pauseNote) pauseNote.textContent = "";
-    return;
-  }
-  const result = await findEligibleKey(account);
-  publishKeyId = result.keyId;
-  if (pauseNote) {
-    pauseNote.innerHTML = result.publishingPaused ? '<span class="bad">Publishing is paused. A Caps Mind holder with 2,000,000 GEAR can unpause.</span>' : "";
-  }
-  gate.innerHTML = result.ok ? `<span class="ok">${escapeHtml(result.reason)} (${short(account)})</span>` : `<span class="bad">${escapeHtml(result.reason)}</span>`;
-  if (btn) btn.disabled = !result.ok;
-}
-async function onPublish() {
-  const status = document.getElementById("publishStatus");
-  const imageUri = document.getElementById("imageUrl")?.value.trim();
-  const description = document.getElementById("description")?.value.trim();
-  if (!imageUri || !description) {
-    if (status) status.textContent = "Image URL and description required.";
-    return;
-  }
-  if (!account) {
-    if (status) status.textContent = "Connect wallet first.";
-    return;
-  }
-  if (status) status.textContent = "Publishing\u2026";
-  if (!cfg.live) {
-    const res = await fetch("/api/local/publish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageUri, description, publisher: account })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      if (status) status.textContent = data.error || "Publish failed";
-      return;
+async function mintTablet(id) {
+  const msg = document.querySelector(`[data-mint-msg="${id}"]`);
+  if (busy) return;
+  if (!await ensureReady(msg) || !account) return;
+  busy = true;
+  const buttons = document.querySelectorAll("[data-mint]");
+  buttons.forEach((b) => b.disabled = true);
+  try {
+    showMsg(msg, "info", "Checking the price\u2026");
+    const [paused, price, whole, bal, allowance] = await Promise.all([
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "paused" }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPrice", args: [BigInt(id)] }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "nextPriceWhole", args: [BigInt(id)] }),
+      pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "balanceOf", args: [account] }),
+      pub.readContract({ address: GEAR_ADDR, abi: erc20Abi2, functionName: "allowance", args: [account, TABLETS_ADDR] })
+    ]);
+    if (paused) return showMsg(msg, "bad", esc(TABLET_ERROR_TEXT.PausedError));
+    if (bal < price) {
+      return showMsg(msg, "bad", `This copy costs ${whole} GEAR and this wallet holds ${gear(bal)} GEAR.`);
     }
-    if (status) status.textContent = `Published local prophecy #${data.prophecy.id}`;
-    disconnect();
-    location.href = `/prophecy/${data.prophecy.id}`;
-    return;
-  }
-  if (!publishKeyId) {
-    if (status) status.textContent = "No eligible Caps Mind key on this wallet.";
-    return;
-  }
-  const wallet = await walletClient();
-  const hash3 = await wallet.writeContract({
-    address: cfg.propheciesAddress,
-    abi: propheciesAbi,
-    functionName: "publish",
-    args: [BigInt(publishKeyId), imageUri, description],
-    chain: chain(),
-    account
-  });
-  if (status) status.textContent = `Tx ${hash3.slice(0, 10)}\u2026 waiting`;
-  await publicClient().waitForTransactionReceipt({ hash: hash3 });
-  if (status) status.textContent = "Published onchain. Disconnecting\u2026";
-  disconnect();
-  location.href = "/";
-}
-async function onMint() {
-  const id = window.__PROPHECY_ID__;
-  const status = document.getElementById("mintStatus");
-  if (!id || !account) return;
-  if (status) status.textContent = "Minting\u2026";
-  if (!cfg.live) {
-    const res = await fetch(`/api/local/mint/${id}`, { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) {
-      if (status) status.textContent = data.error || "Mint failed";
-      return;
+    const wallet = walletClient();
+    if (allowance < price) {
+      showMsg(msg, "info", `Step 1 of 2: approve exactly ${whole} GEAR for the tablets contract in your wallet.`);
+      const approveHash = await wallet.writeContract({
+        address: GEAR_ADDR,
+        abi: erc20Abi2,
+        functionName: "approve",
+        args: [TABLETS_ADDR, price]
+      });
+      showMsg(msg, "info", `Approval sent (${txLink(approveHash)}). Waiting for Base\u2026`);
+      const r = await pub.waitForTransactionReceipt({ hash: approveHash });
+      if (r.status !== "success") return showMsg(msg, "bad", `The approval ${txLink(approveHash)} failed on chain.`);
     }
-    if (status) status.textContent = `Local mint ok. Next ${data.prophecy.nextPriceWholeGear} GEAR.`;
-    await refreshDetail();
-    return;
-  }
-  const client = publicClient();
-  const props = cfg.propheciesAddress;
-  const gear = cfg.gearAddress;
-  const price = await client.readContract({
-    address: props,
-    abi: propheciesAbi,
-    functionName: "nextPrice",
-    args: [BigInt(id)]
-  });
-  const wallet = await walletClient();
-  const allowance = await client.readContract({
-    address: gear,
-    abi: erc20Abi2,
-    functionName: "allowance",
-    args: [account, props]
-  });
-  if (allowance < price) {
-    if (status) status.textContent = `Approving ${formatUnits(price, cfg.gearDecimals)} GEAR\u2026`;
-    const approveHash = await wallet.writeContract({
-      address: gear,
-      abi: erc20Abi2,
-      functionName: "approve",
-      args: [props, price],
-      chain: chain(),
+    showMsg(msg, "info", `${allowance < price ? "Step 2 of 2: c" : "C"}onfirm the mint for ${whole} GEAR in your wallet.`);
+    const { request } = await pub.simulateContract({
+      address: TABLETS_ADDR,
+      abi: tabletsAbi,
+      functionName: "mint",
+      args: [BigInt(id), price],
       account
     });
-    await client.waitForTransactionReceipt({ hash: approveHash });
-  }
-  if (status) status.textContent = "Sending mint\u2026";
-  const hash3 = await wallet.writeContract({
-    address: props,
-    abi: propheciesAbi,
-    functionName: "mint",
-    args: [BigInt(id)],
-    chain: chain(),
-    account
-  });
-  await client.waitForTransactionReceipt({ hash: hash3 });
-  if (status) status.textContent = `Minted. Tx ${hash3.slice(0, 12)}\u2026`;
-  await refreshDetail();
-}
-async function onUploadFile(file) {
-  const status = document.getElementById("publishStatus");
-  const fd = new FormData();
-  fd.set("file", file);
-  if (status) status.textContent = "Uploading image\u2026";
-  const res = await fetch("/api/upload", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) {
-    if (status) status.textContent = data.error || "Upload failed";
-    return;
-  }
-  const input = document.getElementById("imageUrl");
-  if (input) input.value = data.url;
-  const preview = document.getElementById("preview");
-  const img = document.getElementById("previewImg");
-  if (preview && img) {
-    img.src = data.url;
-    preview.style.display = "block";
-  }
-  if (status) status.textContent = "Image ready.";
-}
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function escapeAttr(s) {
-  return escapeHtml(s).replace(/"/g, "&quot;");
-}
-async function boot() {
-  await loadConfig();
-  document.getElementById("connectBtn")?.addEventListener("click", async () => {
-    await connect();
-    await refreshPublishGate();
-    await refreshDetail();
-    const mintBtn = document.getElementById("mintBtn");
-    if (mintBtn) mintBtn.disabled = !account;
-  });
-  document.getElementById("disconnectBtn")?.addEventListener("click", () => disconnect());
-  document.getElementById("publishBtn")?.addEventListener("click", () => void onPublish());
-  document.getElementById("mintBtn")?.addEventListener("click", () => void onMint());
-  document.getElementById("imageFile")?.addEventListener("change", (e) => {
-    const input = e.target;
-    const file = input.files?.[0];
-    if (file) void onUploadFile(file);
-  });
-  if (window.ethereum) {
+    const hash3 = await wallet.writeContract(request);
+    showMsg(msg, "info", `Mint sent (${txLink(hash3)}). Waiting for Base\u2026`);
+    const receipt = await pub.waitForTransactionReceipt({ hash: hash3 });
+    if (receipt.status !== "success") return showMsg(msg, "bad", `The mint ${txLink(hash3)} failed on chain.`);
+    const ev = parseEventLogs({ abi: tabletsAbi, eventName: "TabletMinted", logs: receipt.logs })[0];
+    const what = ev ? `Prophecy Tablet ${ev.args.tabletId} #${ev.args.serial} (token ID ${ev.args.tokenId})` : `a copy of Tablet #${id}`;
+    showMsg(msg, "ok", `You minted ${esc(what)}. Transaction ${txLink(hash3)}.`);
+  } catch (e) {
+    showMsg(msg, "bad", esc(explain(e)));
+  } finally {
+    busy = false;
+    buttons.forEach((b) => b.disabled = false);
     try {
-      const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      if (accounts[0]) {
-        account = accounts[0];
-        setChip(short(account));
-      }
+      renderTabletNumbers(await readTablet(id));
     } catch {
     }
+    void renderWalletLine();
   }
-  await refreshGallery();
-  await refreshPublishGate();
-  await refreshDetail();
+}
+function decodeTokenUri(uri) {
+  const prefix = "data:application/json;base64,";
+  if (!uri.startsWith(prefix)) return {};
+  const bin = atob(uri.slice(prefix.length));
+  const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function lookupCopy() {
+  const msg = $("lookupMsg");
+  const id = Number($("lookupId")?.value || "0");
+  if (!Number.isInteger(id) || id < 1) return showMsg(msg, "bad", "Enter a token ID of 1 or more.");
+  showMsg(msg, "info", "Reading Base\u2026");
+  try {
+    const tid = BigInt(id);
+    const [tablet, serial, owner, uri] = await Promise.all([
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "tabletOf", args: [tid] }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "serialOf", args: [tid] }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "ownerOf", args: [tid] }),
+      pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "tokenURI", args: [tid] })
+    ]);
+    const meta = decodeTokenUri(uri);
+    const img = meta.image ? displayImageUrl(meta.image) : "";
+    showMsg(
+      msg,
+      "ok",
+      `<b>${esc(meta.name || `Prophecy Tablet ${tablet} #${serial}`)}</b><br/>Token ID ${id} is copy #${serial} of <a href="/tablet/${tablet}">Tablet #${tablet}</a>.<br/>Held by <a href="${TABLETS.explorer}/address/${esc(owner)}" target="_blank" rel="noopener">${esc(short(owner))}</a>.` + (img ? `<br/><img src="${esc(img)}" alt="" style="max-width:220px;margin-top:8px;border-radius:6px"/>` : "")
+    );
+  } catch (e) {
+    showMsg(msg, "bad", esc(explain(e)));
+  }
+}
+var pubState = null;
+async function loadPublishState() {
+  const [paused, publishingPaused, count] = await Promise.all([
+    pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "paused" }),
+    pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "publishingPaused" }),
+    pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "tabletCount" })
+  ]);
+  const n = Math.min(Number(count), 500);
+  const tablets = await Promise.all(Array.from({ length: n }, (_, i) => readTablet(i + 1)));
+  const keys = [];
+  let keyScanError = null;
+  if (account) {
+    try {
+      const owner = account;
+      const minted = Number(await pub.readContract({ address: KEY_ADDR, abi: capsMindKeyViewAbi, functionName: "totalMinted" }));
+      const ids = Array.from({ length: Math.min(minted, MAX_KEY_SCAN) }, (_, i) => i + 1);
+      const owners = await Promise.all(
+        ids.map(
+          (id) => pub.readContract({ address: KEY_ADDR, abi: capsMindKeyViewAbi, functionName: "ownerOf", args: [BigInt(id)] }).catch(() => null)
+        )
+      );
+      const mine = ids.filter((_, i) => owners[i] && owners[i].toLowerCase() === owner.toLowerCase());
+      const eligible = await Promise.all(
+        mine.map((id) => pub.readContract({ address: TABLETS_ADDR, abi: tabletsAbi, functionName: "isPublishEligible", args: [BigInt(id)] }))
+      );
+      mine.forEach((id, i) => keys.push({ id, eligible: eligible[i] }));
+    } catch (e) {
+      keyScanError = explain(e);
+    }
+  }
+  return { paused, publishingPaused, tabletCount: Number(count), tablets, keys, keyScanError };
+}
+function selectedKey() {
+  const v = Number($("keySelect")?.value || "0");
+  return pubState?.keys.find((k) => k.id === v) || null;
+}
+function gateReason() {
+  const s = pubState;
+  if (!provider()) return "No browser wallet found. Install or unlock Rabby, Coinbase Wallet, or MetaMask, then reload.";
+  if (!account) return "Connect a wallet that holds a CAPs Mind key.";
+  if (walletChainId !== TABLETS.chainId) return "Your wallet is on the wrong network. Switch to Base.";
+  if (!s) return "Reading Base\u2026";
+  if (s.keyScanError) return `Could not check your CAPs Mind keys: ${s.keyScanError}`;
+  if (!s.keys.length) {
+    return "This wallet does not hold a CAPs Mind key, so it cannot publish or edit tablets. Connect the wallet that holds your key.";
+  }
+  if (s.paused) return TABLET_ERROR_TEXT.PausedError;
+  if (s.publishingPaused) return TABLET_ERROR_TEXT.PublishingPausedError + " Minting still works.";
+  const key = selectedKey();
+  if (!key) return "Pick which CAPs Mind key to use.";
+  if (!key.eligible) {
+    return `CAPs Mind key #${key.id} is locked from publishing. A CAPs Mind holder with 2,000,000 GEAR can unlock it.`;
+  }
+  return null;
+}
+function renderPublish() {
+  const s = pubState;
+  setText("pubAddr", account || "Not connected");
+  const sw = $("switchBtn");
+  if (sw) sw.style.display = account && walletChainId !== TABLETS.chainId ? "" : "none";
+  setHtml(
+    "pubChain",
+    !account ? "-" : walletChainId === TABLETS.chainId ? '<span class="ok">Base</span>' : '<span class="bad">Wrong network</span>'
+  );
+  if (s) {
+    setHtml(
+      "pubOpen",
+      s.paused ? '<span class="bad">Contract paused by owner</span>' : s.publishingPaused ? '<span class="bad">Paused</span>' : '<span class="ok">Open</span>'
+    );
+    setText("pubCount", String(s.tabletCount));
+    setText("nextTabletNo", `will be Tablet #${s.tabletCount + 1}`);
+  }
+  const sel = $("keySelect");
+  if (sel) {
+    const prev = sel.value;
+    if (!account) {
+      sel.innerHTML = '<option value="">Connect a wallet first</option>';
+      sel.disabled = true;
+    } else if (s && s.keys.length) {
+      sel.innerHTML = s.keys.map((k) => `<option value="${k.id}">Key #${k.id}${k.eligible ? " (ready)" : " (locked)"}</option>`).join("");
+      const keep = s.keys.find((k) => String(k.id) === prev) || s.keys.find((k) => k.eligible) || s.keys[0];
+      sel.value = String(keep.id);
+      sel.disabled = s.keys.length < 2;
+    } else {
+      sel.innerHTML = `<option value="">${s ? "No CAPs Mind key in this wallet" : "Checking\u2026"}</option>`;
+      sel.disabled = true;
+    }
+  }
+  const why = gateReason();
+  const gate = $("gateMsg");
+  const key = selectedKey();
+  const neutral = !s || !account && !!provider();
+  if (why) showMsg(gate, neutral ? "info" : "bad", esc(why));
+  else showMsg(gate, "ok", `CAPs Mind key #${key.id} is ready. You can publish and edit tablets.`);
+  for (const p of PREVIEW_PROPHECIES) {
+    const onchain = s ? tabletForPreview(p, s.tablets) : void 0;
+    const badge = document.querySelector(`[data-quick-status="${p.n}"]`);
+    if (badge) {
+      badge.className = "badge " + (onchain ? "live" : "soon");
+      badge.textContent = onchain ? `Onchain as Tablet #${onchain.id}` : "Not yet onchain";
+    }
+  }
+  const ed = $("editTablet");
+  if (ed && s) {
+    const prev = ed.value;
+    if (s.tablets.length) {
+      ed.innerHTML = s.tablets.map((t) => `<option value="${t.id}">Tablet #${t.id}: ${esc(t.description.slice(0, 50))}</option>`).join("");
+      ed.value = s.tablets.some((t) => String(t.id) === prev) ? prev : String(s.tablets[s.tablets.length - 1].id);
+      ed.disabled = false;
+      if (prev !== ed.value) fillEditFromTablet();
+    } else {
+      ed.innerHTML = '<option value="">No tablets onchain yet</option>';
+      ed.disabled = true;
+    }
+  }
+  renderFormButtons();
+}
+function renderFormButtons() {
+  const blocked = busy || !!gateReason();
+  const pb = $("publishBtn");
+  if (pb) pb.disabled = blocked;
+  const ub = $("updateBtn");
+  if (ub) ub.disabled = blocked || !pubState?.tablets.length;
+}
+async function refreshPublish() {
+  try {
+    pubState = await loadPublishState();
+  } catch (e) {
+    pubState = null;
+    showMsg($("gateMsg"), "bad", "Could not read Base: " + esc(explain(e)) + " Reload in a moment.");
+    renderFormButtons();
+    return;
+  }
+  renderPublish();
+}
+function fillEditFromTablet() {
+  const id = Number($("editTablet")?.value || "0");
+  const t = pubState?.tablets.find((x) => x.id === id);
+  if (!t) return;
+  const img = $("editImageUrl");
+  const desc = $("editDescription");
+  if (img) img.value = t.imageURI;
+  if (desc) desc.value = t.description;
+  updatePreview("editImageUrl", "editPreview", "editPreviewImg");
+  updateBytes("editDescription", "editDescBytes");
+}
+function updatePreview(inputId, wrapId, imgId) {
+  const v = ($(inputId)?.value || "").trim();
+  const wrap3 = $(wrapId);
+  const img = $(imgId);
+  if (!wrap3 || !img) return;
+  const url = isAllowedImageUri(v) ? displayImageUrl(v) : "";
+  if (url) {
+    img.src = url;
+    wrap3.style.display = "block";
+  } else {
+    wrap3.style.display = "none";
+  }
+}
+function updateBytes(textId, outId) {
+  const v = $(textId)?.value || "";
+  const n = byteLength(v.trim());
+  setHtml(outId, n > TABLETS.maxDescriptionBytes ? `<span class="bad">${n} / ${TABLETS.maxDescriptionBytes} bytes (too long)</span>` : `${n} / ${TABLETS.maxDescriptionBytes} bytes`);
+}
+function validateForm(imageURI, description) {
+  if (!imageURI) return "Add an image link first.";
+  if (!isAllowedImageUri(imageURI)) return "The image link has to start with https:// or ipfs://.";
+  if (byteLength(imageURI) > TABLETS.maxImageUriBytes) return TABLET_ERROR_TEXT.ImageTooLong;
+  if (!description) return "Add a description first.";
+  if (byteLength(description) > TABLETS.maxDescriptionBytes) return TABLET_ERROR_TEXT.DescriptionTooLong;
+  return null;
+}
+async function sendKeyTx(kind) {
+  const msg = $(kind === "publish" ? "publishMsg" : "updateMsg");
+  const imageURI = ($(kind === "publish" ? "imageUrl" : "editImageUrl")?.value || "").trim();
+  const description = ($(kind === "publish" ? "description" : "editDescription")?.value || "").trim();
+  const bad = validateForm(imageURI, description);
+  if (bad) return showMsg(msg, "bad", esc(bad));
+  if (!await ensureReady(msg) || !account) return;
+  await refreshPublish();
+  const why = gateReason();
+  if (why) return showMsg(msg, "bad", esc(why));
+  const key = selectedKey();
+  const tabletId = Number($("editTablet")?.value || "0");
+  if (kind === "update" && !pubState?.tablets.some((t) => t.id === tabletId)) return showMsg(msg, "bad", "Pick a tablet to edit.");
+  busy = true;
+  renderFormButtons();
+  try {
+    const ok = await pub.readContract({
+      address: TABLETS_ADDR,
+      abi: tabletsAbi,
+      functionName: "canPublishWithKey",
+      args: [account, BigInt(key.id)]
+    });
+    if (!ok) return showMsg(msg, "bad", esc(`The contract says key #${key.id} cannot publish from this wallet right now. Refresh and check the messages above.`));
+    showMsg(msg, "info", "Checking with the contract\u2026");
+    const wallet = walletClient();
+    let hash3;
+    if (kind === "publish") {
+      const { request, result } = await pub.simulateContract({
+        address: TABLETS_ADDR,
+        abi: tabletsAbi,
+        functionName: "publishTablet",
+        args: [BigInt(key.id), imageURI, description],
+        account
+      });
+      showMsg(msg, "info", `Confirm in your wallet. This publishes Tablet #${result} with key #${key.id}.`);
+      hash3 = await wallet.writeContract(request);
+    } else {
+      const { request } = await pub.simulateContract({
+        address: TABLETS_ADDR,
+        abi: tabletsAbi,
+        functionName: "updateTablet",
+        args: [BigInt(key.id), BigInt(tabletId), imageURI, description],
+        account
+      });
+      showMsg(msg, "info", `Confirm in your wallet. This changes Tablet #${tabletId} for every copy.`);
+      hash3 = await wallet.writeContract(request);
+    }
+    showMsg(msg, "info", `Sent (${txLink(hash3)}). Waiting for Base\u2026`);
+    const receipt = await pub.waitForTransactionReceipt({ hash: hash3 });
+    if (receipt.status !== "success") return showMsg(msg, "bad", `The transaction ${txLink(hash3)} failed on chain.`);
+    if (kind === "publish") {
+      const ev = parseEventLogs({ abi: tabletsAbi, eventName: "TabletPublished", logs: receipt.logs })[0];
+      const id = ev ? String(ev.args.tabletId) : "";
+      showMsg(
+        msg,
+        "ok",
+        `Published${id ? ` <a href="/tablet/${id}">Tablet #${id}</a>` : ""}. Transaction ${txLink(hash3)}. It is mintable now.`
+      );
+      const img = $("imageUrl");
+      const desc = $("description");
+      if (img) img.value = "";
+      if (desc) desc.value = "";
+      updatePreview("imageUrl", "preview", "previewImg");
+      updateBytes("description", "descBytes");
+    } else {
+      showMsg(msg, "ok", `Saved. <a href="/tablet/${tabletId}">Tablet #${tabletId}</a> updated for every copy. Transaction ${txLink(hash3)}. Marketplaces may take a few minutes to refresh.`);
+    }
+  } catch (e) {
+    showMsg(msg, "bad", esc(explain(e)));
+  } finally {
+    busy = false;
+    await refreshPublish();
+  }
+}
+function quickFill(n) {
+  const p = PREVIEW_PROPHECIES.find((x) => x.n === n);
+  if (!p) return;
+  const img = $("imageUrl");
+  const desc = $("description");
+  if (img) img.value = p.imageURI;
+  if (desc) desc.value = p.description;
+  updatePreview("imageUrl", "preview", "previewImg");
+  updateBytes("description", "descBytes");
+  const onchain = pubState ? tabletForPreview(p, pubState.tablets) : void 0;
+  showMsg(
+    $("publishMsg"),
+    onchain ? "bad" : "info",
+    onchain ? `Heads up: Prophecy ${n} is already onchain as <a href="/tablet/${onchain.id}">Tablet #${onchain.id}</a>. Publishing again makes a second tablet.` : `Filled with Prophecy ${n}. Check it, then tap Publish tablet.`
+  );
+  $("publishPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+async function onUpload(file) {
+  const msg = $("publishMsg");
+  const fd = new FormData();
+  fd.set("file", file);
+  showMsg(msg, "info", "Uploading image\u2026");
+  try {
+    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok || !data.url) throw new Error(data.error || "Upload failed.");
+    const url = new URL(data.url, location.origin).href;
+    const input = $("imageUrl");
+    if (input) input.value = url;
+    updatePreview("imageUrl", "preview", "previewImg");
+    showMsg(msg, "ok", "Image uploaded and link filled in.");
+  } catch (e) {
+    showMsg(msg, "bad", "Upload failed: " + esc(explain(e)));
+  }
+}
+function bootPublish() {
+  $("switchBtn")?.addEventListener("click", async () => {
+    await switchToBase();
+    await onWalletChanged();
+  });
+  $("keySelect")?.addEventListener("change", () => renderPublish());
+  $("editTablet")?.addEventListener("change", () => fillEditFromTablet());
+  $("publishBtn")?.addEventListener("click", () => void sendKeyTx("publish"));
+  $("updateBtn")?.addEventListener("click", () => void sendKeyTx("update"));
+  $("imageUrl")?.addEventListener("input", () => updatePreview("imageUrl", "preview", "previewImg"));
+  $("editImageUrl")?.addEventListener("input", () => updatePreview("editImageUrl", "editPreview", "editPreviewImg"));
+  $("description")?.addEventListener("input", () => updateBytes("description", "descBytes"));
+  $("editDescription")?.addEventListener("input", () => updateBytes("editDescription", "editDescBytes"));
+  document.querySelectorAll("[data-fill]").forEach(
+    (b) => b.addEventListener("click", () => quickFill(Number(b.dataset.fill)))
+  );
+  $("imageFile")?.addEventListener("change", (e) => {
+    const f = e.target.files?.[0];
+    if (f) void onUpload(f);
+  });
+}
+async function boot() {
+  $("connectBtn")?.addEventListener("click", () => {
+    void connect().catch((e) => alert(explain(e)));
+  });
+  document.querySelectorAll("[data-mint]").forEach(
+    (b) => b.addEventListener("click", () => void mintTablet(Number(b.dataset.mint)))
+  );
+  $("lookupBtn")?.addEventListener("click", () => void lookupCopy());
+  if (info.page === "publish") bootPublish();
+  const eth = provider();
+  if (eth) {
+    eth.on?.("accountsChanged", (accs) => {
+      const list = accs;
+      account = list?.[0] ? getAddress(list[0]) : null;
+      void onWalletChanged();
+    });
+    eth.on?.("chainChanged", (id) => {
+      walletChainId = Number(id);
+      void onWalletChanged();
+    });
+    try {
+      const accs = await eth.request({ method: "eth_accounts" });
+      if (accs[0]) account = getAddress(accs[0]);
+    } catch {
+    }
+    await readWalletChain();
+  }
+  await onWalletChanged();
 }
 void boot();
 /*! Bundled license information:
