@@ -19995,6 +19995,27 @@ function metadataDataUri(meta) {
   return "data:application/json;base64," + btoa(bin);
 }
 
+// src/uploadAuth.ts
+var UPLOAD = {
+  /** Largest file the picker accepts before the browser shrinks it. */
+  maxPickBytes: 8 * 1024 * 1024,
+  /** Largest body the server stores (Vercel functions cap request bodies near 4.5 MB). */
+  maxStoreBytes: 4 * 1024 * 1024,
+  /** How long one signature works for uploads. */
+  authTtlSec: 10 * 60,
+  types: ["image/png", "image/jpeg", "image/gif", "image/webp"]
+};
+function uploadAuthMessage(address, keyId, folder, issuedAt) {
+  return [
+    "CAPs Mind Prophecies: allow image uploads",
+    `Wallet: ${address.toLowerCase()}`,
+    `Key: ${keyId}`,
+    `Use: ${folder}`,
+    `Issued: ${issuedAt}`,
+    "This signature is free and sends nothing."
+  ].join("\n");
+}
+
 // src/walletCore.ts
 var REMEMBER_KEY = "capsmind.wallet.connected";
 var BASE_CHAIN_ID = 8453;
@@ -20585,8 +20606,20 @@ async function onUpload(file) {
   const fd = new FormData();
   fd.set("file", file);
   fd.set("folder", "key");
-  showMsg("info", "Uploading image\u2026");
   try {
+    const eth = wallet.provider();
+    if (!eth || !account) throw new Error("Connect the owner wallet first.");
+    const issuedAt = Math.floor(Date.now() / 1e3);
+    showMsg("info", "Approve the free signature in your wallet so the site knows you own the key contract.");
+    const signature = await createWalletClient({ account, chain: base, transport: custom(eth) }).signMessage({
+      account,
+      message: uploadAuthMessage(account, 0, "key", issuedAt)
+    });
+    fd.set("address", account);
+    fd.set("keyId", "0");
+    fd.set("issuedAt", String(issuedAt));
+    fd.set("signature", signature);
+    showMsg("info", "Uploading image\u2026");
     const res = await fetch("/api/upload", { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok || !data.url) throw new Error(data.error || "Upload failed.");

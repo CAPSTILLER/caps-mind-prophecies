@@ -20392,6 +20392,27 @@ var MintFlow = class {
   }
 };
 
+// src/uploadAuth.ts
+var UPLOAD = {
+  /** Largest file the picker accepts before the browser shrinks it. */
+  maxPickBytes: 8 * 1024 * 1024,
+  /** Largest body the server stores (Vercel functions cap request bodies near 4.5 MB). */
+  maxStoreBytes: 4 * 1024 * 1024,
+  /** How long one signature works for uploads. */
+  authTtlSec: 10 * 60,
+  types: ["image/png", "image/jpeg", "image/gif", "image/webp"]
+};
+function uploadAuthMessage(address, keyId, folder, issuedAt) {
+  return [
+    "CAPs Mind Prophecies: allow image uploads",
+    `Wallet: ${address.toLowerCase()}`,
+    `Key: ${keyId}`,
+    `Use: ${folder}`,
+    `Issued: ${issuedAt}`,
+    "This signature is free and sends nothing."
+  ].join("\n");
+}
+
 // src/walletCore.ts
 var REMEMBER_KEY = "capsmind.wallet.connected";
 var BASE_CHAIN_ID = 8453;
@@ -21145,22 +21166,96 @@ async function sendKeyTx(kind) {
     await refreshPublish();
   }
 }
+var uploadAuth = null;
+function uploadAuthFresh() {
+  const key = selectedKey();
+  return !!uploadAuth && !!account && !!key && uploadAuth.address.toLowerCase() === account.toLowerCase() && uploadAuth.keyId === key.id && Math.floor(Date.now() / 1e3) - uploadAuth.issuedAt < UPLOAD.authTtlSec - 60;
+}
+async function onUploadTap() {
+  const msg = $("publishMsg");
+  const picker = $("imageFile");
+  if (!picker) return;
+  if (uploadAuthFresh()) {
+    picker.click();
+    return;
+  }
+  const why = gateReason();
+  if (why) return showMsg(msg, "bad", esc(why));
+  const key = selectedKey();
+  const address = account;
+  const issuedAt = Math.floor(Date.now() / 1e3);
+  try {
+    showMsg(msg, "info", "Approve the free signature in your wallet. It sends nothing and costs nothing.");
+    const signature = await walletClient().signMessage({ account: address, message: uploadAuthMessage(address, key.id, "prophecies", issuedAt) });
+    uploadAuth = { address, keyId: key.id, issuedAt, signature };
+    showMsg(msg, "ok", "Signed. Pick your image now. If the photo picker did not open, tap Upload image again.");
+    picker.click();
+  } catch (e) {
+    showMsg(msg, "bad", esc(explain(e)));
+  }
+}
+async function prepareImage(file) {
+  const okType = UPLOAD.types.includes(file.type);
+  if (okType && file.size <= UPLOAD.maxStoreBytes) return file;
+  if (file.type === "image/gif") throw new Error("That GIF is over 4 MB. Pick a smaller one.");
+  const bmp = await createImageBitmap(file).catch(() => {
+    throw new Error("This phone cannot read that image type. Use PNG, JPEG, GIF or WebP.");
+  });
+  for (const [maxSide, q] of [
+    [2400, 0.9],
+    [2e3, 0.85],
+    [1600, 0.8],
+    [1200, 0.75]
+  ]) {
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const out = await new Promise((r) => canvas.toBlob(r, "image/jpeg", q));
+    if (out && out.size <= UPLOAD.maxStoreBytes) return out;
+  }
+  throw new Error("Could not shrink that image under 4 MB.");
+}
 async function onUpload(file) {
   const msg = $("publishMsg");
-  const fd = new FormData();
-  fd.set("file", file);
-  showMsg(msg, "info", "Uploading image\u2026");
+  const btn = $("uploadBtn");
+  if (file.size > UPLOAD.maxPickBytes) return showMsg(msg, "bad", "That image is over 8 MB. Pick a smaller one.");
+  if (!uploadAuthFresh() || !uploadAuth) return showMsg(msg, "bad", "Tap Upload image to sign first.");
+  const local = URL.createObjectURL(file);
+  const wrap3 = $("preview");
+  const img = $("previewImg");
+  if (wrap3 && img) {
+    img.src = local;
+    wrap3.style.display = "block";
+  }
+  if (btn) btn.disabled = true;
   try {
+    showMsg(msg, "info", "Getting the image ready\u2026");
+    const body = await prepareImage(file);
+    const fd = new FormData();
+    fd.set("file", body, file.name || "image");
+    fd.set("folder", "prophecies");
+    fd.set("address", uploadAuth.address);
+    fd.set("keyId", String(uploadAuth.keyId));
+    fd.set("issuedAt", String(uploadAuth.issuedAt));
+    fd.set("signature", uploadAuth.signature);
+    showMsg(msg, "info", "Uploading image\u2026");
     const res = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok || !data.url) throw new Error(data.error || "Upload failed.");
-    const url = new URL(data.url, location.origin).href;
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 403) uploadAuth = null;
+    if (!res.ok || !data.url) throw new Error(data.error || `Upload failed (${res.status}).`);
+    const url = data.url.startsWith("/") ? new URL(data.url, location.origin).href : data.url;
     const input = $("imageUrl");
     if (input) input.value = url;
-    updatePreview("imageUrl", "preview", "previewImg");
-    showMsg(msg, "ok", "Image uploaded and link filled in.");
+    showMsg(msg, "ok", `Image uploaded and the link is filled in: <span class="mono">${esc(url)}</span>. Now add the description and publish.`);
   } catch (e) {
     showMsg(msg, "bad", "Upload failed: " + esc(explain(e)));
+    updatePreview("imageUrl", "preview", "previewImg");
+  } finally {
+    if (btn) btn.disabled = false;
+    const picker = $("imageFile");
+    if (picker) picker.value = "";
   }
 }
 function bootPublish() {
@@ -21176,6 +21271,7 @@ function bootPublish() {
   $("editImageUrl")?.addEventListener("input", () => updatePreview("editImageUrl", "editPreview", "editPreviewImg"));
   $("description")?.addEventListener("input", () => updateBytes("description", "descBytes"));
   $("editDescription")?.addEventListener("input", () => updateBytes("editDescription", "editDescBytes"));
+  $("uploadBtn")?.addEventListener("click", () => void onUploadTap());
   $("imageFile")?.addEventListener("change", (e) => {
     const f = e.target.files?.[0];
     if (f) void onUpload(f);

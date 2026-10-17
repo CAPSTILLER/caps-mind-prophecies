@@ -9,7 +9,7 @@ export type SiteConfig = {
   gearAddress: string;
   gearDecimals: number;
   maxPriceGear: number;
-  /** True when Vercel Blob is set up, so the publish page can offer image uploads. */
+  /** True when IPFS (Pinata) or Vercel Blob is set up (or local dev), so the publish page can offer image uploads. */
   blobUpload: boolean;
 };
 
@@ -29,7 +29,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): SiteConfig 
     gearAddress: TABLETS.gearAddress,
     gearDecimals: TABLETS.gearDecimals,
     maxPriceGear: TABLETS.maxPriceGear,
-    blobUpload: Boolean((env.BLOB_READ_WRITE_TOKEN || '').trim()),
+    blobUpload: Boolean((env.PINATA_JWT || '').trim() || (env.BLOB_READ_WRITE_TOKEN || '').trim() || !env.VERCEL),
   };
 }
 

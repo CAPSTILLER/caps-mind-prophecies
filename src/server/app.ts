@@ -6,6 +6,7 @@ import { chainReader, type TabletReader, type TabletsState } from './chain.js';
 import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
 import { page } from './pages.js';
+import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, type UploadGate } from './upload.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
 
 export type AppEnv = { Bindings: Record<string, never> };
@@ -14,7 +15,11 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message.split('\n')[0] : String(e);
 }
 
-export function createApp(cfg: SiteConfig = configFromEnv(), reader: TabletReader = chainReader(cfg)) {
+export function createApp(
+  cfg: SiteConfig = configFromEnv(),
+  reader: TabletReader = chainReader(cfg),
+  gate: UploadGate = chainUploadGate(cfg),
+) {
   const app = new Hono<AppEnv>();
 
   async function safeState(): Promise<{ state: TabletsState | null; error: string | null }> {
@@ -53,29 +58,43 @@ export function createApp(cfg: SiteConfig = configFromEnv(), reader: TabletReade
     }
   });
 
-  /** Image upload for the publish page. Only offered in the UI when Vercel Blob is set up. */
+  /**
+   * Image upload for the publish page and the key page. Gated: the wallet signs a free message and
+   * must be able to publish with the named CAPs Mind key (or own the key contract for key art).
+   * Stores on IPFS (PINATA_JWT) or Vercel Blob (BLOB_READ_WRITE_TOKEN). Secrets stay server-side.
+   */
   app.post('/api/upload', async (c) => {
+    const store = uploadStore();
+    if (!store) return c.json({ error: 'Uploads are not set up on this site yet. Paste an image link instead.' }, 503);
+    const len = Number(c.req.header('content-length') || '0');
+    if (len > UPLOAD.maxStoreBytes + 64 * 1024) return c.json({ error: 'Image is too big. Max 4 MB after shrinking.' }, 413);
     const form = await c.req.parseBody();
     const file = form.file;
     if (!file || typeof file === 'string') return c.json({ error: 'file required' }, 400);
-    const blob = file as File;
-    if (!/^image\/(png|jpeg|gif|webp)$/.test(blob.type)) return c.json({ error: 'PNG, JPEG, GIF or WebP only' }, 400);
-    const safeName = blob.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token) {
-      const { put } = await import('@vercel/blob');
-      const folder = form.folder === 'key' ? 'key' : 'prophecies';
-      const stored = await put(`${folder}/${Date.now()}-${safeName}`, blob, { access: 'public', token });
-      return c.json({ url: stored.url });
+    const folder = form.folder === 'key' ? 'key' : 'prophecies';
+    let why: string | null;
+    try {
+      why = await gate({
+        address: String(form.address || ''),
+        keyId: Number(form.keyId || '0'),
+        folder,
+        issuedAt: Number(form.issuedAt || '0'),
+        signature: String(form.signature || ''),
+      });
+    } catch (e) {
+      return c.json({ error: 'Could not check your key on Base: ' + errText(e) }, 502);
     }
-    // Local `npm run serve` only: write under public/uploads.
-    const buf = Buffer.from(await blob.arrayBuffer());
-    const name = `${Date.now()}-${safeName}`;
-    const dir = path.join(process.cwd(), 'public', 'uploads');
-    const { mkdir, writeFile } = await import('node:fs/promises');
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, name), buf);
-    return c.json({ url: `/uploads/${name}` });
+    if (why) return c.json({ error: why }, 403);
+    const bytes = new Uint8Array(await (file as File).arrayBuffer());
+    if (bytes.length > UPLOAD.maxStoreBytes) return c.json({ error: 'Image is too big. Max 4 MB after shrinking.' }, 413);
+    const type = sniffImageType(bytes);
+    if (!type) return c.json({ error: 'PNG, JPEG, GIF or WebP only' }, 400);
+    try {
+      const url = await storeImage(store, folder, bytes, type);
+      return c.json({ url, store });
+    } catch (e) {
+      return c.json({ error: errText(e) }, 502);
+    }
   });
 
   for (const [route, file] of [
@@ -94,7 +113,7 @@ export function createApp(cfg: SiteConfig = configFromEnv(), reader: TabletReade
 
   /** Owner page for the deployed CAPs Mind key NFT on Base mainnet. */
   app.get('/key', (c) => {
-    const blobUpload = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+    const blobUpload = cfg.blobUpload;
     return c.html(page('CAPs Mind key', keyPageBody({ blobUpload }), 'key', '/key-page.js'));
   });
   app.get('/owner', (c) => c.redirect('/key', 302));

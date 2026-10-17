@@ -29,6 +29,7 @@ import {
   type Tablet,
 } from '../src/tablets.js';
 import { MintFlow, type MintDeps, type MintView } from '../src/mintFlow.js';
+import { UPLOAD, uploadAuthMessage } from '../src/uploadAuth.js';
 import { initWalletUi } from './walletUi.js';
 
 type PageInfo = { page: 'gallery' | 'tablet' | 'publish'; id?: number; blobUpload?: boolean };
@@ -610,22 +611,113 @@ async function sendKeyTx(kind: 'publish' | 'update') {
   }
 }
 
+// ---------------------------------------------------------------------------
+// image upload (gated by a free signature, checked on the server)
+// ---------------------------------------------------------------------------
+
+let uploadAuth: { address: string; keyId: number; issuedAt: number; signature: string } | null = null;
+
+function uploadAuthFresh(): boolean {
+  const key = selectedKey();
+  return (
+    !!uploadAuth &&
+    !!account &&
+    !!key &&
+    uploadAuth.address.toLowerCase() === account.toLowerCase() &&
+    uploadAuth.keyId === key.id &&
+    Math.floor(Date.now() / 1000) - uploadAuth.issuedAt < UPLOAD.authTtlSec - 60
+  );
+}
+
+/** Tap handler. Opens the picker right away when already signed; otherwise asks for the free signature first (inside the tap). */
+async function onUploadTap() {
+  const msg = $('publishMsg');
+  const picker = $<HTMLInputElement>('imageFile');
+  if (!picker) return;
+  if (uploadAuthFresh()) {
+    picker.click();
+    return;
+  }
+  const why = gateReason();
+  if (why) return showMsg(msg, 'bad', esc(why));
+  const key = selectedKey()!;
+  const address = account!;
+  const issuedAt = Math.floor(Date.now() / 1000);
+  try {
+    showMsg(msg, 'info', 'Approve the free signature in your wallet. It sends nothing and costs nothing.');
+    const signature = await walletClient().signMessage({ account: address, message: uploadAuthMessage(address, key.id, 'prophecies', issuedAt) });
+    uploadAuth = { address, keyId: key.id, issuedAt, signature };
+    showMsg(msg, 'ok', 'Signed. Pick your image now. If the photo picker did not open, tap Upload image again.');
+    picker.click();
+  } catch (e) {
+    showMsg(msg, 'bad', esc(explain(e)));
+  }
+}
+
+/** Shrink big photos (or turn odd formats into JPEG) so they fit the upload limit. */
+async function prepareImage(file: File): Promise<Blob> {
+  const okType = UPLOAD.types.includes(file.type);
+  if (okType && file.size <= UPLOAD.maxStoreBytes) return file;
+  if (file.type === 'image/gif') throw new Error('That GIF is over 4 MB. Pick a smaller one.');
+  const bmp = await createImageBitmap(file).catch(() => {
+    throw new Error('This phone cannot read that image type. Use PNG, JPEG, GIF or WebP.');
+  });
+  for (const [maxSide, q] of [
+    [2400, 0.9],
+    [2000, 0.85],
+    [1600, 0.8],
+    [1200, 0.75],
+  ] as const) {
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const out = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', q));
+    if (out && out.size <= UPLOAD.maxStoreBytes) return out;
+  }
+  throw new Error('Could not shrink that image under 4 MB.');
+}
+
 async function onUpload(file: File) {
   const msg = $('publishMsg');
-  const fd = new FormData();
-  fd.set('file', file);
-  showMsg(msg, 'info', 'Uploading image…');
+  const btn = $<HTMLButtonElement>('uploadBtn');
+  if (file.size > UPLOAD.maxPickBytes) return showMsg(msg, 'bad', 'That image is over 8 MB. Pick a smaller one.');
+  if (!uploadAuthFresh() || !uploadAuth) return showMsg(msg, 'bad', 'Tap Upload image to sign first.');
+  const local = URL.createObjectURL(file);
+  const wrap = $('preview');
+  const img = $<HTMLImageElement>('previewImg');
+  if (wrap && img) {
+    img.src = local;
+    wrap.style.display = 'block';
+  }
+  if (btn) btn.disabled = true;
   try {
+    showMsg(msg, 'info', 'Getting the image ready…');
+    const body = await prepareImage(file);
+    const fd = new FormData();
+    fd.set('file', body, file.name || 'image');
+    fd.set('folder', 'prophecies');
+    fd.set('address', uploadAuth.address);
+    fd.set('keyId', String(uploadAuth.keyId));
+    fd.set('issuedAt', String(uploadAuth.issuedAt));
+    fd.set('signature', uploadAuth.signature);
+    showMsg(msg, 'info', 'Uploading image…');
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const data = (await res.json()) as { url?: string; error?: string };
-    if (!res.ok || !data.url) throw new Error(data.error || 'Upload failed.');
-    const url = new URL(data.url, location.origin).href;
+    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (res.status === 403) uploadAuth = null;
+    if (!res.ok || !data.url) throw new Error(data.error || `Upload failed (${res.status}).`);
+    const url = data.url.startsWith('/') ? new URL(data.url, location.origin).href : data.url;
     const input = $<HTMLInputElement>('imageUrl');
     if (input) input.value = url;
-    updatePreview('imageUrl', 'preview', 'previewImg');
-    showMsg(msg, 'ok', 'Image uploaded and link filled in.');
+    showMsg(msg, 'ok', `Image uploaded and the link is filled in: <span class="mono">${esc(url)}</span>. Now add the description and publish.`);
   } catch (e) {
     showMsg(msg, 'bad', 'Upload failed: ' + esc(explain(e)));
+    updatePreview('imageUrl', 'preview', 'previewImg');
+  } finally {
+    if (btn) btn.disabled = false;
+    const picker = $<HTMLInputElement>('imageFile');
+    if (picker) picker.value = '';
   }
 }
 
@@ -642,6 +734,7 @@ function bootPublish() {
   $('editImageUrl')?.addEventListener('input', () => updatePreview('editImageUrl', 'editPreview', 'editPreviewImg'));
   $('description')?.addEventListener('input', () => updateBytes('description', 'descBytes'));
   $('editDescription')?.addEventListener('input', () => updateBytes('editDescription', 'editDescBytes'));
+  $('uploadBtn')?.addEventListener('click', () => void onUploadTap());
   $<HTMLInputElement>('imageFile')?.addEventListener('change', (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) void onUpload(f);

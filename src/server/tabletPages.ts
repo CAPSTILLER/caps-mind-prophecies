@@ -199,10 +199,12 @@ ${status}
 /** Publish and edit page for CAPs Mind key holders. All checks run in the browser against Base. */
 export function publishBody(opts: { blobUpload: boolean }): string {
   const upload = opts.blobUpload
-    ? `<label for="imageFile">Or upload an image</label>
-  <input id="imageFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp"/>
-  <p class="note">Uploads to this site's storage and fills in the https link. For permanence, an ipfs:// link is best.</p>`
-    : '';
+    ? `<div class="row" style="margin-top:10px">
+    <button type="button" id="uploadBtn" class="primary">📷 Upload image</button>
+    <input id="imageFile" type="file" accept="image/*" style="display:none"/>
+  </div>
+  <p class="note" id="uploadNote">Pick a photo from your gallery or take one. It uploads and the image link above fills in by itself. PNG, JPEG, GIF or WebP, up to 8 MB. The first upload asks your wallet for a free signature (no transaction) to prove you hold a CAPs Mind key.</p>`
+    : `<p class="note">Image uploads are not switched on for this site yet, so paste an image link.</p>`;
   return `${TABLET_STYLES}
 <div class="banner"><b>Publish a prophecy tablet.</b> Connect a wallet that holds a CAPs Mind key, pick the key, add an image link (https:// or ipfs://) and the description, then sign. The tablet becomes the next tablet number and anyone can mint copies right away. Every button opens your wallet to sign. Nothing is sent until you approve it there.</div>
 
@@ -223,7 +225,7 @@ export function publishBody(opts: { blobUpload: boolean }): string {
 
 <section class="panel" style="margin-top:16px" id="publishPanel">
   <h2 style="margin:0 0 6px;font-size:16px">2. New tablet <span class="badge" id="nextTabletNo"></span></h2>
-  <label for="imageUrl">Image link (https:// or ipfs://)</label>
+  <label for="imageUrl">Image (upload below, or paste a https:// or ipfs:// link)</label>
   <input id="imageUrl" class="plain" placeholder="https://… or ipfs://…" autocomplete="off"/>
   ${upload}
   <div id="preview" style="margin-top:12px;display:none;max-width:420px" class="tablet-frame"><img id="previewImg" alt="Image preview"/></div>

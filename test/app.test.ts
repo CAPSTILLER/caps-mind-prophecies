@@ -148,8 +148,12 @@ describe('publish page', () => {
     expect(html).not.toContain('data-fill=');
     expect(html).toContain('src="/app.js"');
     expect(html.replace(/<footer>[\s\S]*?<\/footer>/, '')).not.toContain('\u2014'); // Cap's footer wording keeps his dash
-    // No upload box without Vercel Blob.
-    expect(html).not.toContain('id="imageFile"');
+    // Upload button shows when storage is available (local dev here).
+    expect(html).toContain('id="uploadBtn"');
+    expect(html).toContain('id="imageFile"');
+    const off = createApp({ ...cfg, blobUpload: false }, stubReader([])).app;
+    const offHtml = await (await off.request('http://x/publish')).text();
+    expect(offHtml).not.toContain('id="imageFile"');
   });
 });
 
@@ -204,5 +208,26 @@ describe('header wallet button', () => {
     const { app } = createApp(cfg, stubReader([tablet(1, p1.imageURI, p1.description)]));
     const html = await (await app.request('http://x/')).text();
     expect(html).toContain('data-mint="1">Connect wallet to mint</button>');
+  });
+});
+
+describe('upload gate', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  function form(extra: Record<string, string> = {}, bytes: Uint8Array = png) {
+    const fd = new FormData();
+    fd.set('file', new File([bytes as Uint8Array<ArrayBuffer>], 'a.png', { type: 'image/png' }));
+    for (const [k, v] of Object.entries({ address: '0x' + '1'.repeat(40), keyId: '1', issuedAt: '1', signature: '0x00', ...extra })) fd.set(k, v);
+    return fd;
+  }
+  it('refuses uploads when the gate says no, before storing anything', async () => {
+    const { app } = createApp(cfg, stubReader([]), async () => 'nope');
+    const res = await app.request('http://x/api/upload', { method: 'POST', body: form() });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('nope');
+  });
+  it('refuses non-images even for eligible wallets', async () => {
+    const { app } = createApp(cfg, stubReader([]), async () => null);
+    const res = await app.request('http://x/api/upload', { method: 'POST', body: form({}, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])) });
+    expect(res.status).toBe(400);
   });
 });
