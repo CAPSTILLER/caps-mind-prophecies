@@ -4,12 +4,12 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,
-      "includeFiles": "web/*.js"
+      "includeFiles": "{web/*.js,public/prophecies/**}"
     }
   },
   "rewrites": [
     {
-      "source": "/((?!favicon\\.ico$|favicon-32\\.png$|apple-touch-icon\\.png$|icon-192\\.png$|icon-512\\.png$|manifest\\.webmanifest$|og\\.jpg$|gear-logo-cutout\\.png$|prophecies/|uploads/|key/).*)",
+      "source": "/((?!favicon\\.ico$|favicon-32\\.png$|apple-touch-icon\\.png$|icon-192\\.png$|icon-512\\.png$|manifest\\.webmanifest$|og\\.jpg$|gear-logo-cutout\\.png$|uploads/|key/).*)",
       "destination": "/api"
     }
   ],

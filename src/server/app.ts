@@ -6,7 +6,7 @@ import { chainReader, type TabletReader, type TabletsState } from './chain.js';
 import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
 import { page } from './pages.js';
-import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, type UploadGate } from './upload.js';
+import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, resolveSlot, clearSlotCache, extFor, type UploadGate } from './upload.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
 
 export type AppEnv = { Bindings: Record<string, never> };
@@ -64,25 +64,53 @@ export function createApp(
    * must be able to publish with the named CAPs Mind key (or own the key contract for key art).
    * Stores on IPFS (PINATA_JWT) or Vercel Blob (BLOB_READ_WRITE_TOKEN). Secrets stay server-side.
    */
-  /** IPFS image proxy: tries several gateways (Pinata first), only passes images, caches for a year. */
-  app.get('/ipfs/*', async (c) => {
-    const want = ipfsPath('ipfs://' + decodeURIComponent(new URL(c.req.url).pathname.slice(6)));
-    if (!want) return c.text('bad ipfs path', 400);
+  async function proxyIpfs(want: string, cacheControl: string): Promise<Response | null> {
     for (const gw of IPFS_GATEWAYS) {
       try {
         const res = await fetchImpl(gw + want, { signal: AbortSignal.timeout(9_000), redirect: 'follow' });
         const type = res.headers.get('content-type') || '';
         if (!res.ok || !/^image\//i.test(type)) continue;
         const buf = await res.arrayBuffer();
-        return c.body(buf, 200, {
-          'Content-Type': type,
-          'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
-          'X-Content-Type-Options': 'nosniff',
-        });
+        return new Response(buf, { status: 200, headers: { 'Content-Type': type, 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' } });
       } catch {
         /* next gateway */
       }
     }
+    return null;
+  }
+
+  /** IPFS image proxy: tries several gateways (Pinata first), only passes images, caches for a year. */
+  app.get('/ipfs/*', async (c) => {
+    const want = ipfsPath('ipfs://' + decodeURIComponent(new URL(c.req.url).pathname.slice(6)));
+    if (!want) return c.text('bad ipfs path', 400);
+    const res = await proxyIpfs(want, 'public, max-age=31536000, s-maxage=31536000, immutable');
+    if (res) return res;
+    c.header('Cache-Control', 'no-store');
+    return c.text('image not reachable on IPFS gateways right now', 504);
+  });
+
+  /**
+   * Clean tablet image links: /prophecies/<n>.<ext>. Static files (1.png, 2.png) are served by Vercel
+   * before this runs; anything else is the newest Pinata pin named prophecy-<n>.<ext>.
+   * Short cache because an edit can re-upload the same slot.
+   */
+  app.get('/prophecies/:file', async (c) => {
+    const file = c.req.param('file');
+    if (!/^[1-9][0-9]{0,6}\.(png|jpg|gif|webp)$/.test(file)) return c.text('not found', 404);
+    try {
+      const buf = await readFile(path.join(process.cwd(), 'public', 'prophecies', file));
+      const type = file.endsWith('.png') ? 'image/png' : file.endsWith('.gif') ? 'image/gif' : file.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' });
+    } catch {
+      /* not a static file */
+    }
+    const cid = await resolveSlot('prophecy-' + file).catch(() => null);
+    if (!cid) {
+      c.header('Cache-Control', 'no-store');
+      return c.text('no image for this tablet yet', 404);
+    }
+    const res = await proxyIpfs(cid, 'public, max-age=300, s-maxage=600, stale-while-revalidate=86400');
+    if (res) return res;
     c.header('Cache-Control', 'no-store');
     return c.text('image not reachable on IPFS gateways right now', 504);
   });
@@ -110,6 +138,8 @@ export function createApp(
         folder,
         issuedAt: Number(form.issuedAt || '0'),
         signature: String(form.signature || ''),
+        slot: Number(form.slot || '0'),
+        mode: form.mode === 'edit' ? 'edit' : 'publish',
       });
     } catch (e) {
       return c.json({ error: 'Could not check your key on Base: ' + errText(e) }, 502);
@@ -120,7 +150,13 @@ export function createApp(
     const type = sniffImageType(bytes);
     if (!type) return c.json({ error: 'PNG, JPEG, GIF or WebP only' }, 400);
     try {
-      const stored = await storeImage(store, folder, bytes, type);
+      const slot = folder === 'prophecies' ? Number(form.slot || '0') : 0;
+      const stored = await storeImage(store, folder, bytes, type, process.env, slot || undefined);
+      if (slot && store === 'ipfs') {
+        clearSlotCache();
+        const clean = `${TABLETS.siteOrigin}/prophecies/${slot}.${extFor(type)}`;
+        return c.json({ url: clean, ipfs: stored, store });
+      }
       // For IPFS, the tablet stores a gateway https link (shows everywhere); the ipfs:// URI comes along too.
       if (stored.startsWith('ipfs://')) return c.json({ url: gatewayUrl(stored), ipfs: stored, store });
       return c.json({ url: stored, store });

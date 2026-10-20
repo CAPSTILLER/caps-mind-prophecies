@@ -21,7 +21,7 @@ export function uploadStore(env: NodeJS.ProcessEnv = process.env): UploadStore {
   return null;
 }
 
-export type UploadAuth = { address: string; keyId: number; folder: UploadFolder; issuedAt: number; signature: string };
+export type UploadAuth = { address: string; keyId: number; folder: UploadFolder; issuedAt: number; signature: string; slot?: number; mode?: 'publish' | 'edit' };
 
 /** Checks signature + gate. Returns an error sentence, or null when the wallet may upload. */
 export type UploadGate = (a: UploadAuth) => Promise<string | null>;
@@ -54,13 +54,26 @@ export function chainUploadGate(cfg: SiteConfig): UploadGate {
       functionName: 'canPublishWithKey',
       args: [address, BigInt(a.keyId)],
     });
-    return can ? null : `Key #${a.keyId} cannot publish from this wallet, so it cannot upload images either.`;
+    if (!can) return `Key #${a.keyId} cannot publish from this wallet, so it cannot upload images either.`;
+    // Slot = the tablet number the image is for: the next tablet (new) or an existing one (edit).
+    const count = Number(await client.readContract({ address: getAddress(TABLETS.address), abi: tabletsAbi, functionName: 'tabletCount' }));
+    const slot = a.slot as number;
+    if (a.mode === 'edit') {
+      if (!Number.isInteger(slot) || slot < 1 || slot > count) return `Tablet #${slot} does not exist yet. Reload the page.`;
+    } else if (slot !== count + 1) {
+      return `Someone just published Tablet #${count}. The next one is #${count + 1}. Tap Upload image again.`;
+    }
+    return null;
   };
 }
 
-export async function storeImage(store: Exclude<UploadStore, null>, folder: UploadFolder, bytes: Uint8Array, type: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
-  const ext = type.split('/')[1].replace('jpeg', 'jpg');
-  const name = `${folder}-${Date.now()}.${ext}`;
+export function extFor(type: string): string {
+  return type.split('/')[1].replace('jpeg', 'jpg');
+}
+
+export async function storeImage(store: Exclude<UploadStore, null>, folder: UploadFolder, bytes: Uint8Array, type: string, env: NodeJS.ProcessEnv = process.env, slot?: number): Promise<string> {
+  const ext = extFor(type);
+  const name = slot ? slotName(slot, ext) : `${folder}-${Date.now()}.${ext}`;
   const file = new File([bytes as Uint8Array<ArrayBuffer>], name, { type });
   if (store === 'ipfs') return `ipfs://${await pinataUpload(file, name, env)}`;
   if (store === 'blob') {
@@ -84,7 +97,7 @@ export async function pinataUpload(file: File, name: string, env: NodeJS.Process
     const fd = new FormData();
     fd.set('file', file);
     fd.set('network', 'public');
-    fd.set('name', `capsmind-${name}`);
+    fd.set('name', name);
     const res = await f('https://uploads.pinata.cloud/v3/files', { method: 'POST', headers: auth, body: fd });
     const j = (await res.json().catch(() => ({}))) as { data?: { cid?: string } };
     if (res.ok && j.data?.cid) return j.data.cid;
@@ -95,7 +108,7 @@ export async function pinataUpload(file: File, name: string, env: NodeJS.Process
   try {
     const fd = new FormData();
     fd.set('file', file);
-    fd.set('pinataMetadata', JSON.stringify({ name: `capsmind-${name}` }));
+    fd.set('pinataMetadata', JSON.stringify({ name }));
     const res = await f('https://api.pinata.cloud/pinning/pinFileToIPFS', { method: 'POST', headers: auth, body: fd });
     const j = (await res.json().catch(() => ({}))) as { IpfsHash?: string };
     if (res.ok && j.IpfsHash) return j.IpfsHash;
@@ -104,6 +117,55 @@ export async function pinataUpload(file: File, name: string, env: NodeJS.Process
     errs.push('legacy network');
   }
   throw new Error(`IPFS upload failed (${errs.join(', ')}). Check that PINATA_JWT on Vercel is a current key with file upload permission.`);
+}
+
+/** Pinata file name that ties an upload to a tablet number. Newest pin with this name wins. */
+export function slotName(slot: number, ext: string): string {
+  return `prophecy-${slot}.${ext}`;
+}
+
+/** Tablets whose image was pinned before slot names existed. */
+export const FIXED_SLOTS: Record<string, string> = {
+  'prophecy-3.jpg': 'bafybeieihyojuvuaymur7zovpmcaktsmuypcfkcfpivi5ohxtveghvmv7e',
+};
+
+const slotCache = new Map<string, { cid: string | null; at: number }>();
+
+/** Look up the newest CID pinned under a slot name (Pinata v3 list, then legacy pinList). Cached 60 s per instance. */
+export async function resolveSlot(name: string, env: NodeJS.ProcessEnv = process.env, f: typeof fetch = fetch): Promise<string | null> {
+  const hit = slotCache.get(name);
+  if (hit && Date.now() - hit.at < 60_000) return hit.cid;
+  let cid: string | null = null;
+  const jwt = pinataJwt(env);
+  if (jwt) {
+    const auth = { Authorization: `Bearer ${jwt}` };
+    try {
+      const res = await f(`https://api.pinata.cloud/v3/files/public?name=${encodeURIComponent(name)}&order=DESC&limit=10`, { headers: auth, signal: AbortSignal.timeout(6_000) });
+      const j = (await res.json().catch(() => ({}))) as { data?: { files?: { cid?: string; name?: string; created_at?: string }[] } };
+      const files = (j.data?.files || []).filter((x) => x.name === name && x.cid).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      if (res.ok && files[0]) cid = files[0].cid!;
+    } catch {
+      /* try legacy */
+    }
+    if (!cid) {
+      try {
+        const res = await f(`https://api.pinata.cloud/data/pinList?status=pinned&pageLimit=10&metadata[name]=${encodeURIComponent(name)}`, { headers: auth, signal: AbortSignal.timeout(6_000) });
+        const j = (await res.json().catch(() => ({}))) as { rows?: { ipfs_pin_hash?: string; date_pinned?: string; metadata?: { name?: string } }[] };
+        const rows = (j.rows || []).filter((r) => r.metadata?.name === name && r.ipfs_pin_hash).sort((a, b) => String(b.date_pinned).localeCompare(String(a.date_pinned)));
+        if (res.ok && rows[0]) cid = rows[0].ipfs_pin_hash!;
+      } catch {
+        /* none */
+      }
+    }
+  }
+  cid = cid || FIXED_SLOTS[name] || null;
+  slotCache.set(name, { cid, at: Date.now() });
+  return cid;
+}
+
+export function clearSlotCache(name?: string) {
+  if (name) slotCache.delete(name);
+  else slotCache.clear();
 }
 
 export function gatewayUrl(ipfsUri: string): string {

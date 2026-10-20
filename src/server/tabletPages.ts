@@ -245,6 +245,7 @@ export function publishBody(opts: { blobUpload: boolean }): string {
   <select id="editTablet" disabled><option value="">No tablets onchain yet</option></select>
   <label for="editImageUrl">New image link (https:// or ipfs://)</label>
   <input id="editImageUrl" class="plain" placeholder="https://… or ipfs://…" autocomplete="off"/>
+  ${opts.blobUpload ? `<div class="row" style="margin-top:10px"><button type="button" id="editUploadBtn" class="primary">📷 Upload new image</button><input id="editImageFile" type="file" accept="image/*" style="display:none"/></div>` : ''}
   <div id="editPreview" style="margin-top:12px;display:none;max-width:420px" class="tablet-frame"><img id="editPreviewImg" alt="Image preview"/></div>
   <label for="editDescription">New description</label>
   <textarea id="editDescription" class="plain" maxlength="${T.maxDescriptionBytes}"></textarea>

@@ -549,6 +549,11 @@ async function sendKeyTx(kind: 'publish' | 'update') {
   const key = selectedKey()!;
   const tabletId = Number($<HTMLSelectElement>('editTablet')?.value || '0');
   if (kind === 'update' && !pubState?.tablets.some((t) => t.id === tabletId)) return showMsg(msg, 'bad', 'Pick a tablet to edit.');
+  const slotM = /\/prophecies\/(\d+)\.[a-z]+$/i.exec(imageURI);
+  const want = kind === 'publish' ? (pubState?.tabletCount || 0) + 1 : tabletId;
+  if (slotM && Number(slotM[1]) !== want && !(kind === 'publish' && Number(slotM[1]) <= 2)) {
+    return showMsg(msg, 'bad', `This image link is for Tablet #${slotM[1]}, but this will be Tablet #${want} (someone may have just published). Tap Upload image again so the link matches.`);
+  }
 
   busy = true;
   renderFormButtons();
@@ -632,9 +637,9 @@ function uploadAuthFresh(): boolean {
 }
 
 /** Tap handler. Opens the picker right away when already signed; otherwise asks for the free signature first (inside the tap). */
-async function onUploadTap() {
-  const msg = $('publishMsg');
-  const picker = $<HTMLInputElement>('imageFile');
+async function onUploadTap(kind: 'publish' | 'edit') {
+  const msg = $(kind === 'publish' ? 'publishMsg' : 'updateMsg');
+  const picker = $<HTMLInputElement>(kind === 'publish' ? 'imageFile' : 'editImageFile');
   if (!picker) return;
   if (uploadAuthFresh()) {
     picker.click();
@@ -681,14 +686,23 @@ async function prepareImage(file: File): Promise<Blob> {
   throw new Error('Could not shrink that image under 4 MB.');
 }
 
-async function onUpload(file: File) {
-  const msg = $('publishMsg');
-  const btn = $<HTMLButtonElement>('uploadBtn');
+/** Tablet number the image is for: the next tablet when publishing, the picked one when editing. */
+function uploadSlot(kind: 'publish' | 'edit'): number {
+  if (kind === 'edit') return Number($<HTMLSelectElement>('editTablet')?.value || '0');
+  return (pubState?.tabletCount || 0) + 1;
+}
+
+async function onUpload(file: File, kind: 'publish' | 'edit' = 'publish') {
+  const ids = kind === 'publish'
+    ? { msg: 'publishMsg', btn: 'uploadBtn', wrap: 'preview', img: 'previewImg', input: 'imageUrl', file: 'imageFile' }
+    : { msg: 'updateMsg', btn: 'editUploadBtn', wrap: 'editPreview', img: 'editPreviewImg', input: 'editImageUrl', file: 'editImageFile' };
+  const msg = $(ids.msg);
+  const btn = $<HTMLButtonElement>(ids.btn);
   if (file.size > UPLOAD.maxPickBytes) return showMsg(msg, 'bad', 'That image is over 8 MB. Pick a smaller one.');
   if (!uploadAuthFresh() || !uploadAuth) return showMsg(msg, 'bad', 'Tap Upload image to sign first.');
   const local = URL.createObjectURL(file);
-  const wrap = $('preview');
-  const img = $<HTMLImageElement>('previewImg');
+  const wrap = $(ids.wrap);
+  const img = $<HTMLImageElement>(ids.img);
   if (wrap && img) {
     img.src = local;
     wrap.style.display = 'block';
@@ -704,21 +718,25 @@ async function onUpload(file: File) {
     fd.set('keyId', String(uploadAuth.keyId));
     fd.set('issuedAt', String(uploadAuth.issuedAt));
     fd.set('signature', uploadAuth.signature);
+    const slot = uploadSlot(kind);
+    if (!slot) throw new Error('Pick a tablet first.');
+    fd.set('slot', String(slot));
+    fd.set('mode', kind);
     showMsg(msg, 'info', 'Uploading image…');
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
     if (res.status === 403) uploadAuth = null;
     if (!res.ok || !data.url) throw new Error(data.error || `Upload failed (${res.status}).`);
     const url = data.url.startsWith('/') ? new URL(data.url, location.origin).href : data.url;
-    const input = $<HTMLInputElement>('imageUrl');
+    const input = $<HTMLInputElement>(ids.input);
     if (input) input.value = url;
-    showMsg(msg, 'ok', `Image uploaded and the link is filled in: <span class="mono">${esc(url)}</span>. Now add the description and publish.`);
+    showMsg(msg, 'ok', `Image uploaded and the link is filled in: <span class="mono">${esc(url)}</span>. ${kind === 'publish' ? `This is the image for Tablet #${slot}. Now add the description and publish.` : 'Now tap Save changes to tablet.'}`);
   } catch (e) {
     showMsg(msg, 'bad', 'Upload failed: ' + esc(explain(e)));
-    updatePreview('imageUrl', 'preview', 'previewImg');
+    updatePreview(ids.input, ids.wrap, ids.img);
   } finally {
     if (btn) btn.disabled = false;
-    const picker = $<HTMLInputElement>('imageFile');
+    const picker = $<HTMLInputElement>(ids.file);
     if (picker) picker.value = '';
   }
 }
@@ -736,7 +754,12 @@ function bootPublish() {
   $('editImageUrl')?.addEventListener('input', () => updatePreview('editImageUrl', 'editPreview', 'editPreviewImg'));
   $('description')?.addEventListener('input', () => updateBytes('description', 'descBytes'));
   $('editDescription')?.addEventListener('input', () => updateBytes('editDescription', 'editDescBytes'));
-  $('uploadBtn')?.addEventListener('click', () => void onUploadTap());
+  $('uploadBtn')?.addEventListener('click', () => void onUploadTap('publish'));
+  $('editUploadBtn')?.addEventListener('click', () => void onUploadTap('edit'));
+  $<HTMLInputElement>('editImageFile')?.addEventListener('change', (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (f) void onUpload(f, 'edit');
+  });
   $<HTMLInputElement>('imageFile')?.addEventListener('change', (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) void onUpload(f);

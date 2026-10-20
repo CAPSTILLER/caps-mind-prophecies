@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/server/app.js';
 import type { TabletReader, TabletsState } from '../src/server/chain.js';
 import { configFromEnv } from '../src/server/config.js';
-import { pinataUpload, uploadStore, pinataJwt } from '../src/server/upload.js';
+import { pinataUpload, uploadStore, pinataJwt, resolveSlot, clearSlotCache } from '../src/server/upload.js';
 import { PREVIEW_PROPHECIES, TABLETS, type Tablet } from '../src/tablets.js';
 
 function tablet(id: number, imageURI: string, description: string, minted = 0): Tablet {
@@ -283,5 +283,37 @@ describe('ipfs images', () => {
     expect(res.headers.get('content-type')).toBe('image/jpeg');
     expect(res.headers.get('cache-control')).toContain('immutable');
     expect((await app.request('http://x/ipfs/..%2Fetc')).status).toBe(400);
+  });
+});
+
+describe('clean tablet image links', () => {
+  const cid3 = 'bafybeieihyojuvuaymur7zovpmcaktsmuypcfkcfpivi5ohxtveghvmv7e';
+  it('tablet 3 resolves to its pinned CID without Pinata', async () => {
+    clearSlotCache();
+    expect(await resolveSlot('prophecy-3.jpg', {})).toBe(cid3);
+    expect(await resolveSlot('prophecy-9.jpg', {})).toBe(null);
+  });
+  it('newest Pinata pin with the slot name wins', async () => {
+    clearSlotCache();
+    const fake = (async () => new Response(JSON.stringify({ data: { files: [
+      { name: 'prophecy-4.png', cid: 'old', created_at: '2026-01-01' },
+      { name: 'prophecy-4.png', cid: 'new', created_at: '2026-02-01' },
+      { name: 'prophecy-40.png', cid: 'other', created_at: '2026-03-01' },
+    ] } }), { status: 200 })) as unknown as typeof fetch;
+    expect(await resolveSlot('prophecy-4.png', { PINATA_JWT: 'k' }, fake)).toBe('new');
+  });
+  it('serves /prophecies/3.jpg through the gateway proxy and 404s unknown slots', async () => {
+    clearSlotCache();
+    const fake = (async (u: string) => {
+      expect(u).toContain(cid3);
+      return new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    }) as unknown as typeof fetch;
+    const { app } = createApp(cfg, stubReader([]), async () => null, fake);
+    const res = await app.request('http://x/prophecies/3.jpg');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    expect((await app.request('http://x/prophecies/77.jpg')).status).toBe(404);
+    expect((await app.request('http://x/prophecies/..%2Fx.jpg')).status).toBe(404);
+    expect((await app.request('http://x/prophecies/1.png')).headers.get('content-type')).toBe('image/png');
   });
 });
