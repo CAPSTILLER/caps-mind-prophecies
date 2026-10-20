@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PREVIEW_PROPHECIES, TABLETS, pendingPreviews, tabletForPreview } from '../tablets.js';
+import { IPFS_GATEWAYS, ipfsPath, PREVIEW_PROPHECIES, TABLETS, pendingPreviews, tabletForPreview } from '../tablets.js';
 import { chainReader, type TabletReader, type TabletsState } from './chain.js';
 import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
@@ -19,6 +19,7 @@ export function createApp(
   cfg: SiteConfig = configFromEnv(),
   reader: TabletReader = chainReader(cfg),
   gate: UploadGate = chainUploadGate(cfg),
+  fetchImpl: typeof fetch = fetch,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -63,6 +64,29 @@ export function createApp(
    * must be able to publish with the named CAPs Mind key (or own the key contract for key art).
    * Stores on IPFS (PINATA_JWT) or Vercel Blob (BLOB_READ_WRITE_TOKEN). Secrets stay server-side.
    */
+  /** IPFS image proxy: tries several gateways (Pinata first), only passes images, caches for a year. */
+  app.get('/ipfs/*', async (c) => {
+    const want = ipfsPath('ipfs://' + decodeURIComponent(new URL(c.req.url).pathname.slice(6)));
+    if (!want) return c.text('bad ipfs path', 400);
+    for (const gw of IPFS_GATEWAYS) {
+      try {
+        const res = await fetchImpl(gw + want, { signal: AbortSignal.timeout(9_000), redirect: 'follow' });
+        const type = res.headers.get('content-type') || '';
+        if (!res.ok || !/^image\//i.test(type)) continue;
+        const buf = await res.arrayBuffer();
+        return c.body(buf, 200, {
+          'Content-Type': type,
+          'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+        });
+      } catch {
+        /* next gateway */
+      }
+    }
+    c.header('Cache-Control', 'no-store');
+    return c.text('image not reachable on IPFS gateways right now', 504);
+  });
+
   /** Which storage the server sees (no secrets), to debug Vercel env setup. */
   app.get('/api/upload-status', (c) => {
     c.header('Cache-Control', 'no-store');

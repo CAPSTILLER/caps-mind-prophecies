@@ -91,12 +91,37 @@ export function isAllowedImageUri(uri: string): boolean {
  */
 export function displayImageUrl(uri: string): string {
   const u = (uri || '').trim();
+  // Any IPFS image (ipfs://, ipfs.io, Pinata, dweb.link…) loads through this site's /ipfs/ proxy, which
+  // tries several gateways server-side and caches. Public gateways like ipfs.io often answer 429.
+  const ipfs = ipfsPath(u);
+  if (ipfs) return '/ipfs/' + ipfs;
   if (/^ipfs:\/\//i.test(u)) return TABLETS.ipfsGateway + u.slice(7).replace(/^ipfs\//i, '');
   if (u.startsWith(TABLETS.siteOrigin + '/')) return u.slice(TABLETS.siteOrigin.length);
   if (u.startsWith('/') && !u.startsWith('//')) return u;
   if (/^https:\/\//i.test(u)) return u;
   return '';
 }
+
+const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})$/;
+
+/** "<cid>" or "<cid>/<path>" for an IPFS link in any common form, else null. */
+export function ipfsPath(uri: string): string | null {
+  const u = (uri || '').trim();
+  let rest: string | null = null;
+  const m1 = /^ipfs:\/\/(?:ipfs\/)?(.+)$/i.exec(u);
+  const m2 = /^https:\/\/[^/]+\/ipfs\/(.+)$/i.exec(u);
+  const m3 = /^https:\/\/([a-z0-9]+)\.ipfs\.[^/]+\/?(.*)$/i.exec(u);
+  if (m1) rest = m1[1];
+  else if (m2) rest = m2[1];
+  else if (m3) rest = m3[1] + (m3[2] ? '/' + m3[2] : '');
+  if (!rest) return null;
+  rest = rest.split(/[?#]/)[0].replace(/\/+$/, '');
+  const [cid, ...path] = rest.split('/');
+  if (!CID_RE.test(cid) || path.some((p) => !/^[A-Za-z0-9._-]+$/.test(p))) return null;
+  return [cid, ...path].join('/');
+}
+
+export const IPFS_GATEWAYS = ['https://gateway.pinata.cloud/ipfs/', 'https://w3s.link/ipfs/', 'https://dweb.link/ipfs/', 'https://ipfs.io/ipfs/'] as const;
 
 function sameImage(a: string, b: string): boolean {
   const norm = (s: string) => displayImageUrl(s).toLowerCase();

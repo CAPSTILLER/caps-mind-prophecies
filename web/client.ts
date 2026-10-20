@@ -25,6 +25,8 @@ import {
   TABLET_ERROR_TEXT,
   byteLength,
   displayImageUrl,
+  IPFS_GATEWAYS,
+  ipfsPath,
   isAllowedImageUri,
   type Tablet,
 } from '../src/tablets.js';
@@ -745,7 +747,27 @@ function bootPublish() {
 // boot
 // ---------------------------------------------------------------------------
 
+/** If the /ipfs/ proxy fails for an image, fall back to public gateways directly, one by one. */
+function installIpfsImgFallback() {
+  document.addEventListener(
+    'error',
+    (ev) => {
+      const img = ev.target as HTMLImageElement;
+      if (!(img instanceof HTMLImageElement)) return;
+      const path = img.dataset.ipfs || ipfsPath(img.src.startsWith(location.origin + '/ipfs/') ? 'ipfs://' + img.src.slice(location.origin.length + 6) : img.src);
+      if (!path) return;
+      const n = Number(img.dataset.gw || '0');
+      if (n >= IPFS_GATEWAYS.length) return;
+      img.dataset.ipfs = path;
+      img.dataset.gw = String(n + 1);
+      img.src = IPFS_GATEWAYS[n] + path;
+    },
+    true,
+  );
+}
+
 async function boot() {
+  installIpfsImgFallback();
   bootMint();
   $('lookupBtn')?.addEventListener('click', () => void lookupCopy());
   if (info.page === 'publish') bootPublish();

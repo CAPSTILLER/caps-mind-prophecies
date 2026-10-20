@@ -107,7 +107,7 @@ export async function pinataUpload(file: File, name: string, env: NodeJS.Process
 }
 
 export function gatewayUrl(ipfsUri: string): string {
-  return 'https://ipfs.io/ipfs/' + ipfsUri.replace(/^ipfs:\/\//, '');
+  return 'https://gateway.pinata.cloud/ipfs/' + ipfsUri.replace(/^ipfs:\/\//, '');
 }
 
 export { UPLOAD, sniffImageType };

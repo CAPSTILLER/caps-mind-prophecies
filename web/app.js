@@ -20132,12 +20132,31 @@ function isAllowedImageUri(uri) {
 }
 function displayImageUrl(uri) {
   const u = (uri || "").trim();
+  const ipfs = ipfsPath(u);
+  if (ipfs) return "/ipfs/" + ipfs;
   if (/^ipfs:\/\//i.test(u)) return TABLETS.ipfsGateway + u.slice(7).replace(/^ipfs\//i, "");
   if (u.startsWith(TABLETS.siteOrigin + "/")) return u.slice(TABLETS.siteOrigin.length);
   if (u.startsWith("/") && !u.startsWith("//")) return u;
   if (/^https:\/\//i.test(u)) return u;
   return "";
 }
+var CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})$/;
+function ipfsPath(uri) {
+  const u = (uri || "").trim();
+  let rest = null;
+  const m1 = /^ipfs:\/\/(?:ipfs\/)?(.+)$/i.exec(u);
+  const m2 = /^https:\/\/[^/]+\/ipfs\/(.+)$/i.exec(u);
+  const m3 = /^https:\/\/([a-z0-9]+)\.ipfs\.[^/]+\/?(.*)$/i.exec(u);
+  if (m1) rest = m1[1];
+  else if (m2) rest = m2[1];
+  else if (m3) rest = m3[1] + (m3[2] ? "/" + m3[2] : "");
+  if (!rest) return null;
+  rest = rest.split(/[?#]/)[0].replace(/\/+$/, "");
+  const [cid, ...path] = rest.split("/");
+  if (!CID_RE.test(cid) || path.some((p) => !/^[A-Za-z0-9._-]+$/.test(p))) return null;
+  return [cid, ...path].join("/");
+}
+var IPFS_GATEWAYS = ["https://gateway.pinata.cloud/ipfs/", "https://w3s.link/ipfs/", "https://dweb.link/ipfs/", "https://ipfs.io/ipfs/"];
 function byteLength(s) {
   return new TextEncoder().encode(s).length;
 }
@@ -21277,7 +21296,25 @@ function bootPublish() {
     if (f) void onUpload(f);
   });
 }
+function installIpfsImgFallback() {
+  document.addEventListener(
+    "error",
+    (ev) => {
+      const img = ev.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      const path = img.dataset.ipfs || ipfsPath(img.src.startsWith(location.origin + "/ipfs/") ? "ipfs://" + img.src.slice(location.origin.length + 6) : img.src);
+      if (!path) return;
+      const n = Number(img.dataset.gw || "0");
+      if (n >= IPFS_GATEWAYS.length) return;
+      img.dataset.ipfs = path;
+      img.dataset.gw = String(n + 1);
+      img.src = IPFS_GATEWAYS[n] + path;
+    },
+    true
+  );
+}
 async function boot() {
+  installIpfsImgFallback();
   bootMint();
   $("lookupBtn")?.addEventListener("click", () => void lookupCopy());
   if (info.page === "publish") bootPublish();

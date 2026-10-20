@@ -259,3 +259,29 @@ describe('pinata', () => {
     expect(err).not.toContain('sekret');
   });
 });
+
+describe('ipfs images', () => {
+  const cid = 'bafybeieihyojuvuaymur7zovpmcaktsmuypcfkcfpivi5ohxtveghvmv7e';
+  it('maps every gateway form to the /ipfs/ proxy', async () => {
+    const { displayImageUrl, ipfsPath } = await import('../src/tablets.js');
+    for (const u of [`ipfs://${cid}`, `https://ipfs.io/ipfs/${cid}`, `https://gateway.pinata.cloud/ipfs/${cid}`, `https://${cid}.ipfs.dweb.link/`]) {
+      expect(displayImageUrl(u)).toBe(`/ipfs/${cid}`);
+    }
+    expect(ipfsPath('https://ipfs.io/ipfs/notacid')).toBe(null);
+    expect(displayImageUrl('https://example.com/a.png')).toBe('https://example.com/a.png');
+  });
+  it('proxy skips a 429 gateway and serves the next image', async () => {
+    const seen: string[] = [];
+    const fake = (async (u: string) => {
+      seen.push(u);
+      if (seen.length === 1) return new Response('slow down', { status: 429 });
+      return new Response(new Uint8Array([1, 2]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    }) as unknown as typeof fetch;
+    const { app } = createApp(cfg, stubReader([]), async () => null, fake);
+    const res = await app.request(`http://x/ipfs/${cid}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    expect(res.headers.get('cache-control')).toContain('immutable');
+    expect((await app.request('http://x/ipfs/..%2Fetc')).status).toBe(400);
+  });
+});
