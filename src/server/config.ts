@@ -29,7 +29,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): SiteConfig 
     gearAddress: TABLETS.gearAddress,
     gearDecimals: TABLETS.gearDecimals,
     maxPriceGear: TABLETS.maxPriceGear,
-    blobUpload: Boolean((env.PINATA_JWT || '').trim() || (env.BLOB_READ_WRITE_TOKEN || '').trim() || !env.VERCEL),
+    blobUpload: Boolean((env.PINATA_JWT || '').replace(/^Bearer\s+/i, '').replace(/["'\s]/g, '') || (env.BLOB_READ_WRITE_TOKEN || '').trim() || !env.VERCEL),
   };
 }
 

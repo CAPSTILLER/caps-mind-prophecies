@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/server/app.js';
 import type { TabletReader, TabletsState } from '../src/server/chain.js';
 import { configFromEnv } from '../src/server/config.js';
+import { pinataUpload, uploadStore, pinataJwt } from '../src/server/upload.js';
 import { PREVIEW_PROPHECIES, TABLETS, type Tablet } from '../src/tablets.js';
 
 function tablet(id: number, imageURI: string, description: string, minted = 0): Tablet {
@@ -229,5 +230,32 @@ describe('upload gate', () => {
     const { app } = createApp(cfg, stubReader([]), async () => null);
     const res = await app.request('http://x/api/upload', { method: 'POST', body: form({}, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])) });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('pinata', () => {
+  const f = new File([new Uint8Array([1])], 'a.png', { type: 'image/png' });
+  it('detects PINATA_JWT on Vercel, even with a Bearer prefix', () => {
+    expect(uploadStore({ VERCEL: '1' })).toBe(null);
+    expect(uploadStore({ VERCEL: '1', PINATA_JWT: ' Bearer abc ' })).toBe('ipfs');
+    expect(pinataJwt({ PINATA_JWT: '"Bearer abc"' })).toBe('abc');
+    expect(uploadStore({ VERCEL: '1', BLOB_READ_WRITE_TOKEN: 'x' })).toBe('blob');
+    expect(configFromEnv({ VERCEL: '1', PINATA_JWT: 'abc' }).blobUpload).toBe(true);
+    expect(configFromEnv({ VERCEL: '1' }).blobUpload).toBe(false);
+  });
+  it('uses v3, falls back to legacy, never leaks the key', async () => {
+    const calls: string[] = [];
+    const fake = (async (url: string, init: RequestInit) => {
+      calls.push(url);
+      expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sekret');
+      if (url.includes('v3')) return new Response('{}', { status: 403 });
+      return new Response(JSON.stringify({ IpfsHash: 'bafyLEGACY' }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await pinataUpload(f, 'a.png', { PINATA_JWT: 'sekret' }, fake)).toBe('bafyLEGACY');
+    expect(calls.length).toBe(2);
+    const bad = (async () => new Response('{}', { status: 401 })) as unknown as typeof fetch;
+    const err = await pinataUpload(f, 'a.png', { PINATA_JWT: 'sekret' }, bad).catch((e: Error) => e.message);
+    expect(err).toContain('v3 401');
+    expect(err).not.toContain('sekret');
   });
 });

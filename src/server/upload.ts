@@ -9,8 +9,13 @@ import type { SiteConfig } from './config.js';
 
 export type UploadStore = 'ipfs' | 'blob' | 'local' | null;
 
+/** The Pinata JWT, tolerant of a pasted "Bearer " prefix, quotes or spaces. Never logged or returned. */
+export function pinataJwt(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.PINATA_JWT || '').trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '').trim();
+}
+
 export function uploadStore(env: NodeJS.ProcessEnv = process.env): UploadStore {
-  if ((env.PINATA_JWT || '').trim()) return 'ipfs';
+  if (pinataJwt(env)) return 'ipfs';
   if ((env.BLOB_READ_WRITE_TOKEN || '').trim()) return 'blob';
   if (!env.VERCEL) return 'local';
   return null;
@@ -57,20 +62,7 @@ export async function storeImage(store: Exclude<UploadStore, null>, folder: Uplo
   const ext = type.split('/')[1].replace('jpeg', 'jpg');
   const name = `${folder}-${Date.now()}.${ext}`;
   const file = new File([bytes as Uint8Array<ArrayBuffer>], name, { type });
-  if (store === 'ipfs') {
-    const fd = new FormData();
-    fd.set('file', file);
-    fd.set('network', 'public');
-    fd.set('name', `capsmind-${name}`);
-    const res = await fetch('https://uploads.pinata.cloud/v3/files', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${(env.PINATA_JWT || '').trim()}` },
-      body: fd,
-    });
-    const j = (await res.json().catch(() => ({}))) as { data?: { cid?: string }; error?: unknown };
-    if (!res.ok || !j.data?.cid) throw new Error(`IPFS upload failed (${res.status}). Check PINATA_JWT on Vercel.`);
-    return `ipfs://${j.data.cid}`;
-  }
+  if (store === 'ipfs') return `ipfs://${await pinataUpload(file, name, env)}`;
   if (store === 'blob') {
     const { put } = await import('@vercel/blob');
     const stored = await put(`${folder}/${name}`, file, { access: 'public', token: env.BLOB_READ_WRITE_TOKEN, addRandomSuffix: true });
@@ -82,6 +74,40 @@ export async function storeImage(store: Exclude<UploadStore, null>, folder: Uplo
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, name), bytes);
   return `/uploads/${name}`;
+}
+
+/** Upload to Pinata: v3 Files API first, then legacy pinFileToIPFS (keys scoped to legacy endpoints). Returns the CID. */
+export async function pinataUpload(file: File, name: string, env: NodeJS.ProcessEnv = process.env, f: typeof fetch = fetch): Promise<string> {
+  const auth = { Authorization: `Bearer ${pinataJwt(env)}` };
+  const errs: string[] = [];
+  try {
+    const fd = new FormData();
+    fd.set('file', file);
+    fd.set('network', 'public');
+    fd.set('name', `capsmind-${name}`);
+    const res = await f('https://uploads.pinata.cloud/v3/files', { method: 'POST', headers: auth, body: fd });
+    const j = (await res.json().catch(() => ({}))) as { data?: { cid?: string } };
+    if (res.ok && j.data?.cid) return j.data.cid;
+    errs.push(`v3 ${res.status}`);
+  } catch (e) {
+    errs.push('v3 network');
+  }
+  try {
+    const fd = new FormData();
+    fd.set('file', file);
+    fd.set('pinataMetadata', JSON.stringify({ name: `capsmind-${name}` }));
+    const res = await f('https://api.pinata.cloud/pinning/pinFileToIPFS', { method: 'POST', headers: auth, body: fd });
+    const j = (await res.json().catch(() => ({}))) as { IpfsHash?: string };
+    if (res.ok && j.IpfsHash) return j.IpfsHash;
+    errs.push(`legacy ${res.status}`);
+  } catch {
+    errs.push('legacy network');
+  }
+  throw new Error(`IPFS upload failed (${errs.join(', ')}). Check that PINATA_JWT on Vercel is a current key with file upload permission.`);
+}
+
+export function gatewayUrl(ipfsUri: string): string {
+  return 'https://ipfs.io/ipfs/' + ipfsUri.replace(/^ipfs:\/\//, '');
 }
 
 export { UPLOAD, sniffImageType };

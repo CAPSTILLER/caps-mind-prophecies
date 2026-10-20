@@ -6,7 +6,7 @@ import { chainReader, type TabletReader, type TabletsState } from './chain.js';
 import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
 import { page } from './pages.js';
-import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, type UploadGate } from './upload.js';
+import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, type UploadGate } from './upload.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
 
 export type AppEnv = { Bindings: Record<string, never> };
@@ -63,6 +63,12 @@ export function createApp(
    * must be able to publish with the named CAPs Mind key (or own the key contract for key art).
    * Stores on IPFS (PINATA_JWT) or Vercel Blob (BLOB_READ_WRITE_TOKEN). Secrets stay server-side.
    */
+  /** Which storage the server sees (no secrets), to debug Vercel env setup. */
+  app.get('/api/upload-status', (c) => {
+    c.header('Cache-Control', 'no-store');
+    return c.json({ store: uploadStore(), pinataJwtSet: Boolean(pinataJwt()), blobTokenSet: Boolean((process.env.BLOB_READ_WRITE_TOKEN || '').trim()), vercelEnv: process.env.VERCEL_ENV || null });
+  });
+
   app.post('/api/upload', async (c) => {
     const store = uploadStore();
     if (!store) return c.json({ error: 'Uploads are not set up on this site yet. Paste an image link instead.' }, 503);
@@ -90,8 +96,10 @@ export function createApp(
     const type = sniffImageType(bytes);
     if (!type) return c.json({ error: 'PNG, JPEG, GIF or WebP only' }, 400);
     try {
-      const url = await storeImage(store, folder, bytes, type);
-      return c.json({ url, store });
+      const stored = await storeImage(store, folder, bytes, type);
+      // For IPFS, the tablet stores a gateway https link (shows everywhere); the ipfs:// URI comes along too.
+      if (stored.startsWith('ipfs://')) return c.json({ url: gatewayUrl(stored), ipfs: stored, store });
+      return c.json({ url: stored, store });
     } catch (e) {
       return c.json({ error: errText(e) }, 502);
     }
