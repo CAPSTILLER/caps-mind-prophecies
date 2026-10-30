@@ -7,12 +7,23 @@ import { base } from 'viem/chains';
 import { zipSync } from 'fflate';
 import { traits, composeWallet, bitmapFromSvg, contentHash, WALLET_FACE_VERSION } from '../faces/engine.js';
 import { IPFS_GATEWAYS, ipfsPath } from '../tablets.js';
-// @ts-ignore plain JS module
-import { generateRock } from '../../rockgen/generate.mjs';
-// @ts-ignore plain JS module
-import { faceMaps } from '../../rockgen/faceTex.mjs';
-// @ts-ignore plain JS module
-import { encodePng } from '../../rockgen/png.mjs';
+// rockgen (three.js, gltf-transform, private assets) loads lazily, only on PNG/GLB routes,
+// so the page and metadata routes never depend on it at cold start.
+let rgP: Promise<any> | null = null;
+function rockgen(): Promise<{ generateRock: any; faceMaps: any; encodePng: any }> {
+  if (!rgP) {
+    rgP = Promise.all([
+      // @ts-ignore plain JS module
+      import('../../rockgen/generate.mjs'),
+      // @ts-ignore plain JS module
+      import('../../rockgen/faceTex.mjs'),
+      // @ts-ignore plain JS module
+      import('../../rockgen/png.mjs'),
+    ]).then(([g, f, p]) => ({ generateRock: g.generateRock, faceMaps: f.faceMaps, encodePng: p.encodePng }));
+    rgP.catch(() => { rgP = null; });
+  }
+  return rgP;
+}
 
 export const CAPS_ROCKS = '0x0fa575fd563517549e714acde968051a7310aadb' as const;
 export const ROCK_GENERATOR_VERSION = 1;
@@ -97,13 +108,13 @@ const cache = new Map<string, Promise<Uint8Array>>();
 function rockGlb(seed: string, bm: any, key: string, preview: boolean) {
   const k = `${ROCK_GENERATOR_VERSION}|${seed.toLowerCase()}|${key}|${preview ? 'p' : 'f'}`;
   if (!cache.has(k)) {
-    const p = generateRock(getAddress(seed), { face: bm, preview }).then((r: any) => r.glb as Uint8Array);
+    const p = rockgen().then((g) => g.generateRock(getAddress(seed), { face: bm, preview })).then((r: any) => r.glb as Uint8Array);
     cache.set(k, p); p.catch(() => cache.delete(k));
     while (cache.size > 12) cache.delete(cache.keys().next().value!);
   }
   return cache.get(k)!;
 }
-export function facePng(bm: any, s = 4) { const m = faceMaps(bm, s); return encodePng(m.w, m.h, m.color) as Buffer; }
+export async function facePng(bm: any, s = 4) { const g = await rockgen(); const m = g.faceMaps(bm, s); return g.encodePng(m.w, m.h, m.color) as Buffer; }
 const BLANK = new Uint8Array(240 * 170);
 
 export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl: typeof fetch = fetch) {
@@ -149,7 +160,7 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
 
   app.get('/api/rocks/:id/face.png', async (c) => {
     const id = idOf(c.req.param('id')); if (id == null) return c.text('bad id', 400);
-    try { const r = await reader.rock(id), { bm } = await pick(r, c.req.query('face')); return c.body(facePng(bm || BLANK) as any, 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=60' }); }
+    try { const r = await reader.rock(id), { bm } = await pick(r, c.req.query('face')); return c.body(await facePng(bm || BLANK) as any, 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=60' }); }
     catch (e: any) { return c.text(e.message || 'error', 404); }
   });
 

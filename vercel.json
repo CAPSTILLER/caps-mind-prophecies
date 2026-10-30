@@ -4,7 +4,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,
-      "includeFiles": "{web/*.js,public/prophecies/**}"
+      "includeFiles": "{web/*.js,public/prophecies/**,rockgen/**/*.mjs}"
     }
   },
   "rewrites": [
