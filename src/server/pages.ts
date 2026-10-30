@@ -111,7 +111,7 @@ footer .gear-logo-link img { height:1.35em; width:auto; display:block; image-ren
 html:not(.cm-x) nav a.cm-h { display:none; }
 .brand { cursor:default; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
 </style>
-<script>(function(){var r=false;try{r=sessionStorage.getItem('cmx')==='1'}catch(e){}if(r){document.documentElement.classList.add('cm-x')}else if(/^\/(publish|key)(\/|$)/.test(location.pathname)||/^#\/?(publish|key)\b/.test(location.hash)){location.replace('/')}})();</script>
+<script>(function(){var r=false;try{r=sessionStorage.getItem('cmx')==='1'}catch(e){}if(r){document.documentElement.classList.add('cm-x')}else{var q=location.pathname.split('/')[1]||'',h=location.hash.replace(/#/,'').replace(/^[/]/,'').split(/[/?&]/)[0];if(q==='publish'||q==='key'||h==='publish'||h==='key'){location.replace('/')}})();</script>
 </head>
 <body>
 <header>
