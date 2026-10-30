@@ -7,7 +7,18 @@ export async function asset(name) {
   if (files.has(name)) return files.get(name);
   const p = (async () => {
     const dir = process.env.ROCKGEN_ASSETS_DIR, url = process.env.ROCKGEN_ASSETS_URL;
-    if (url) { const tok = process.env.ROCKGEN_BLOB_TOKEN || process.env.BLOB_READ_WRITE_TOKEN; const r = await fetch(url.replace(/\/?$/, '/') + name, tok ? { headers: { authorization: 'Bearer ' + tok } } : undefined); if (!r.ok) throw new Error('rockgen asset ' + name + ' ' + r.status); return new Uint8Array(await r.arrayBuffer()); }
+    if (!dir && (url || process.env.BLOB_STORE_ID)) {
+      // private Vercel Blob: SDK handles auth (read-write token, or Vercel OIDC + BLOB_STORE_ID)
+      const { get } = await import('@vercel/blob');
+      const tok = process.env.ROCKGEN_BLOB_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
+      const target = url ? url.split('?')[0].replace(/\/?$/, '/') + name : name;
+      let res = null, errs = [];
+      for (const opts of [tok ? { access: 'private', token: tok } : null, { access: 'private' }].filter(Boolean)) {
+        try { res = await get(target, opts); if (res) break; errs.push('not found'); } catch (e) { errs.push(e.message); }
+      }
+      if (!res) throw new Error('rockgen asset ' + name + ': ' + errs.join(' | '));
+      return new Uint8Array(await new Response(res.stream).arrayBuffer());
+    }
     return new Uint8Array(fs.readFileSync(path.join(dir || path.resolve('rockgen-assets'), name)));
   })();
   files.set(name, p); p.catch(() => files.delete(name)); return p;

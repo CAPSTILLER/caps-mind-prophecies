@@ -133,8 +133,10 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
   app.get('/api/rocks/preview.glb', async (c) => {
     const seed = c.req.query('seed') || '';
     if (!isAddress(seed)) return c.json({ error: 'seed must be an address' }, 400);
-    const glb = await rockGlb(seed, BLANK, 'blank', true);
-    return c.body(glb as any, 200, { 'content-type': 'model/gltf-binary', 'cache-control': 'public, max-age=86400, s-maxage=31536000, immutable' });
+    try {
+      const glb = await rockGlb(seed, BLANK, 'blank', true);
+      return c.body(glb as any, 200, { 'content-type': 'model/gltf-binary', 'cache-control': 'public, max-age=86400, s-maxage=31536000, immutable' });
+    } catch (e: any) { console.error('preview.glb', e); return c.text('rock build failed: ' + (e?.message || e), 500); }
   });
 
   // ERC-721 metadata: tokenURI = baseURI + id  =>  baseURI = https://<host>/api/rocks/
