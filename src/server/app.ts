@@ -5,6 +5,7 @@ import { IPFS_GATEWAYS, ipfsPath, PREVIEW_PROPHECIES, TABLETS, pendingPreviews, 
 import { chainReader, type TabletReader, type TabletsState } from './chain.js';
 import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
+import { facesPageBody } from './facesPage.js';
 import { page } from './pages.js';
 import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, resolveSlot, clearSlotCache, extFor, type UploadGate } from './upload.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
@@ -168,6 +169,7 @@ export function createApp(
   for (const [route, file] of [
     ['/app.js', 'app.js'],
     ['/key-page.js', 'key-page.js'],
+    ['/faces-page.js', 'faces-page.js'],
   ] as const) {
     app.get(route, async (c) => {
       try {
@@ -185,6 +187,9 @@ export function createApp(
     return c.html(page('CAPs Mind key', keyPageBody({ blobUpload }), 'key', '/key-page.js'));
   });
   app.get('/owner', (c) => c.redirect('/key', 302));
+
+  /** Face Maker for CAPs Rocks: wallet face + custom face, laser print preview, mint, export. */
+  app.get('/faces', (c) => c.html(page('Face Maker', facesPageBody(), 'faces', '/faces-page.js')));
 
   app.get('/', async (c) => {
     const { state, error } = await safeState();

@@ -4,6 +4,7 @@ import path from 'node:path';
 const bundles: Array<[entry: string, out: string]> = [
   ['client.ts', 'app.js'],
   ['key-page.ts', 'key-page.js'],
+  ['faces-page.ts', 'faces-page.js'],
 ];
 
 for (const [entry, out] of bundles) {
@@ -15,8 +16,9 @@ for (const [entry, out] of bundles) {
     platform: 'browser',
     target: ['es2022'],
     sourcemap: true,
+    minify: out === 'faces-page.js',
     logLevel: 'info',
   });
 }
 
-console.log('built web/app.js and web/key-page.js');
+console.log('built web/app.js, web/key-page.js and web/faces-page.js');

@@ -3,7 +3,7 @@
 export function page(
   title: string,
   body: string,
-  active: 'gallery' | 'publish' | 'detail' | 'key' = 'gallery',
+  active: 'gallery' | 'publish' | 'detail' | 'key' | 'faces' = 'gallery',
   script = '/app.js',
 ): string {
   return `<!DOCTYPE html>
@@ -116,6 +116,7 @@ footer .gear-logo-link img { height:1.35em; width:auto; display:block; image-ren
   <nav>
     <a href="/" class="${active === 'gallery' || active === 'detail' ? 'on' : ''}">Tablets</a>
     <a href="/publish" class="${active === 'publish' ? 'on' : ''}">Publish</a>
+    <a href="/faces" class="${active === 'faces' ? 'on' : ''}">Faces</a>
     <a href="/key" class="${active === 'key' ? 'on' : ''}">Key</a>
   </nav>
   <button type="button" class="walletbtn" id="walletBtn" aria-pressed="false" aria-label="Connect wallet">Connect wallet</button>

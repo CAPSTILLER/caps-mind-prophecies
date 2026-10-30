@@ -1,0 +1,578 @@
+[
+ {
+  "wallet": "0x17Db8FaD0154c64bbc0D8154556291c11D16b9F7",
+  "variant": 0,
+  "contentHash": "0x31f4f1b5c44ea2da6c1ea156eeda123c5880d58d44d5f2c031f87e21e62df2ef",
+  "traits": {
+   "version": 1,
+   "variant": 0,
+   "mood": "Calm",
+   "eye": 0,
+   "gap": 24,
+   "eyeCY": 58,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 0,
+   "mouthDrop": 0,
+   "mark": 2,
+   "markSide": 1,
+   "tally": 1,
+   "seer": false,
+   "border": 6,
+   "corner": 0,
+   "phase": 248,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x17Db8FaD0154c64bbc0D8154556291c11D16b9F7",
+  "variant": 1,
+  "contentHash": "0x1ea1229a627cd27f6cad14d16f75f97e2ecf94fb15420cc2c3e51e6cd7bf2866",
+  "traits": {
+   "version": 1,
+   "variant": 1,
+   "mood": "Based",
+   "eye": 0,
+   "gap": 24,
+   "eyeCY": 58,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 0,
+   "mouthDrop": 0,
+   "mark": 2,
+   "markSide": 1,
+   "tally": 1,
+   "seer": false,
+   "border": 6,
+   "corner": 0,
+   "phase": 248,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x17Db8FaD0154c64bbc0D8154556291c11D16b9F7",
+  "variant": 2,
+  "contentHash": "0xc20f920ea9f81b5419a9a7bacb4bcf74b6893651cd195121dd0fa1343ced63bb",
+  "traits": {
+   "version": 1,
+   "variant": 2,
+   "mood": "Fierce",
+   "eye": 0,
+   "gap": 24,
+   "eyeCY": 58,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 0,
+   "mouthDrop": 0,
+   "mark": 2,
+   "markSide": 1,
+   "tally": 1,
+   "seer": false,
+   "border": 6,
+   "corner": 0,
+   "phase": 248,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x604b2e24df58ef019312b8367af763a7f156bf08",
+  "variant": 0,
+  "contentHash": "0x5cd1658f1b671b6162663741cf9a745141212ae0647a5bd5d93b26318b370c86",
+  "traits": {
+   "version": 1,
+   "variant": 0,
+   "mood": "Calm",
+   "eye": 4,
+   "gap": 36,
+   "eyeCY": 57,
+   "brow": 3,
+   "browGap": 8,
+   "nose": 2,
+   "mouth": 0,
+   "mouthDrop": 5,
+   "mark": -1,
+   "markSide": 0,
+   "tally": 6,
+   "seer": false,
+   "border": 5,
+   "corner": 2,
+   "phase": 22,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x604b2e24df58ef019312b8367af763a7f156bf08",
+  "variant": 1,
+  "contentHash": "0xe3df43e15ce8a5450eb2a1b8743cdffcff104d92ec0d27693ceb600465d085ae",
+  "traits": {
+   "version": 1,
+   "variant": 1,
+   "mood": "Based",
+   "eye": 4,
+   "gap": 36,
+   "eyeCY": 57,
+   "brow": 3,
+   "browGap": 8,
+   "nose": 2,
+   "mouth": 0,
+   "mouthDrop": 5,
+   "mark": -1,
+   "markSide": 0,
+   "tally": 6,
+   "seer": false,
+   "border": 5,
+   "corner": 2,
+   "phase": 22,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x604b2e24df58ef019312b8367af763a7f156bf08",
+  "variant": 2,
+  "contentHash": "0xea525567216831558206f5678f484f0aeff979f4192643cd4d3d28cae962eda2",
+  "traits": {
+   "version": 1,
+   "variant": 2,
+   "mood": "Fierce",
+   "eye": 4,
+   "gap": 36,
+   "eyeCY": 57,
+   "brow": 3,
+   "browGap": 8,
+   "nose": 2,
+   "mouth": 0,
+   "mouthDrop": 5,
+   "mark": -1,
+   "markSide": 0,
+   "tally": 6,
+   "seer": false,
+   "border": 5,
+   "corner": 2,
+   "phase": 22,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x000000000000000000000000000000000000dEaD",
+  "variant": 0,
+  "contentHash": "0x7ea354acac50e8001a1ba9df0da2c90f4bc5cab93782cab6881c7ae204537ab0",
+  "traits": {
+   "version": 1,
+   "variant": 0,
+   "mood": "Calm",
+   "eye": 9,
+   "gap": 40,
+   "eyeCY": 61,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 1,
+   "mouthDrop": 6,
+   "mark": 2,
+   "markSide": 0,
+   "tally": 1,
+   "seer": false,
+   "border": 5,
+   "corner": 0,
+   "phase": 158,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x000000000000000000000000000000000000dEaD",
+  "variant": 1,
+  "contentHash": "0xb064a028082ffcce78ca9f78b1ec48683d08b5aec0bbc56485742d108c45e1a0",
+  "traits": {
+   "version": 1,
+   "variant": 1,
+   "mood": "Based",
+   "eye": 9,
+   "gap": 40,
+   "eyeCY": 61,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 1,
+   "mouthDrop": 6,
+   "mark": 2,
+   "markSide": 0,
+   "tally": 1,
+   "seer": false,
+   "border": 5,
+   "corner": 0,
+   "phase": 158,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0x000000000000000000000000000000000000dEaD",
+  "variant": 2,
+  "contentHash": "0x694c662af1f288040ff98d79031db5cff5693379b0406665ba3503456696782b",
+  "traits": {
+   "version": 1,
+   "variant": 2,
+   "mood": "Fierce",
+   "eye": 9,
+   "gap": 40,
+   "eyeCY": 61,
+   "brow": 1,
+   "browGap": 5,
+   "nose": 7,
+   "mouth": 1,
+   "mouthDrop": 6,
+   "mark": 2,
+   "markSide": 0,
+   "tally": 1,
+   "seer": false,
+   "border": 5,
+   "corner": 0,
+   "phase": 158,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0xC86166D9645cFFF31510670E85C7bb5b2296dC6A",
+  "variant": 0,
+  "contentHash": "0xa3a3243ea02e18d971e23124bbb030139e7d33acc926ec0307ab82ec22331792",
+  "traits": {
+   "version": 1,
+   "variant": 0,
+   "mood": "Calm",
+   "eye": 6,
+   "gap": 28,
+   "eyeCY": 56,
+   "brow": 8,
+   "browGap": 9,
+   "nose": 1,
+   "mouth": 0,
+   "mouthDrop": 6,
+   "mark": 0,
+   "markSide": 1,
+   "tally": 6,
+   "seer": false,
+   "border": 6,
+   "corner": 1,
+   "phase": 250,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0xC86166D9645cFFF31510670E85C7bb5b2296dC6A",
+  "variant": 1,
+  "contentHash": "0xf64613a1abd3d552b1b767d61de0d316f5389fdd282b331d0b540066b98c6aa6",
+  "traits": {
+   "version": 1,
+   "variant": 1,
+   "mood": "Based",
+   "eye": 6,
+   "gap": 28,
+   "eyeCY": 56,
+   "brow": 8,
+   "browGap": 9,
+   "nose": 1,
+   "mouth": 0,
+   "mouthDrop": 6,
+   "mark": 0,
+   "markSide": 1,
+   "tally": 6,
+   "seer": false,
+   "border": 6,
+   "corner": 1,
+   "phase": 250,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ },
+ {
+  "wallet": "0xC86166D9645cFFF31510670E85C7bb5b2296dC6A",
+  "variant": 2,
+  "contentHash": "0x9637734c5105809c0cc14845f179c02b503e5fc08d6ec67bc46e3d426e580ae5",
+  "traits": {
+   "version": 1,
+   "variant": 2,
+   "mood": "Fierce",
+   "eye": 6,
+   "gap": 28,
+   "eyeCY": 56,
+   "brow": 8,
+   "browGap": 9,
+   "nose": 1,
+   "mouth": 0,
+   "mouthDrop": 6,
+   "mark": 0,
+   "markSide": 1,
+   "tally": 6,
+   "seer": false,
+   "border": 6,
+   "corner": 1,
+   "phase": 250,
+   "drift": {
+    "eye": [
+     0,
+     0
+    ],
+    "brow": [
+     0,
+     0
+    ],
+    "nose": [
+     0,
+     0
+    ],
+    "mouth": [
+     0,
+     0
+    ],
+    "mark": [
+     0,
+     0
+    ],
+    "spread": 0
+   }
+  }
+ }
+]
