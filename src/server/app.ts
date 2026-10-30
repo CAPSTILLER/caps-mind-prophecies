@@ -9,6 +9,7 @@ import { facesPageBody } from './facesPage.js';
 import { page } from './pages.js';
 import { chainRockReader, registerRockRoutes, type RockReader } from './rocks.js';
 import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, resolveSlot, clearSlotCache, extFor, type UploadGate } from './upload.js';
+import { allow, pinCustomFace } from './facePin.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
 
 export type AppEnv = { Bindings: Record<string, never> };
@@ -192,6 +193,13 @@ export function createApp(
   app.get('/owner', (c) => c.redirect('/key', 302));
 
   /** Face Maker for CAPs Rocks: wallet face + custom face, laser print preview, mint, export. */
+  app.post('/api/faces/pin', async (c) => {
+    const ip = (c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'anon').split(',')[0].trim();
+    if (!allow('pin:' + ip, 10, 60_000)) return c.json({ error: 'Too many pin requests; wait a minute.' }, 429);
+    const body = (await c.req.json().catch(() => null)) as { code?: unknown } | null;
+    try { return c.json(await pinCustomFace(body?.code, process.env, fetchImpl)); }
+    catch (e) { const st = (e as { status?: number }).status; return c.json({ error: errText(e) }, st === 503 ? 503 : /IPFS upload failed/.test(errText(e)) ? 502 : 400); }
+  });
   app.get('/faces', (c) => c.html(page('Face Maker', facesPageBody(), 'faces', '/faces-page.js')));
 
   app.get('/', async (c) => {

@@ -1,6 +1,7 @@
 // @ts-nocheck -- DOM glue for /faces. Engine (canonical CAPs Rocks face generators) is in src/faces/engine.ts.
 import { createPublicClient, createWalletClient, custom, fallback, http, getAddress, isAddress } from 'viem';
 import { base } from 'viem/chains';
+import { QUOTE_URL, parseQuote, quoteExpired } from '../src/faces/quote.js';
 import { initWalletUi, explainWalletError } from './walletUi.js';
 import { createRockViewer } from './rock3d.js';
 import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns, bitmapFromSvg } from '../src/faces/engine.js';
@@ -16,8 +17,27 @@ const ABI = [
     { name: 'poseCount', type: 'uint256' }, { name: 'hasActivePose', type: 'bool' }, { name: 'activePoseIndex', type: 'uint256' }] }] },
   { type: 'function', name: 'facesOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }], outputs: [{ type: 'tuple[]', components: FACE_T.components }] },
   { type: 'function', name: 'setActiveFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'index', type: 'uint256' }], outputs: [] },
-  { type: 'function', name: 'addWalletFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'faceGeneratorVersion', type: 'uint16' }, { name: 'variant', type: 'uint32' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'addWalletFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'faceGeneratorVersion', type: 'uint16' }, { name: 'variant', type: 'uint32' }], outputs: [{ type: 'uint256' }] },  { type: 'function', name: 'addCustomFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'contentHash', type: 'bytes32' }, { name: 'uri', type: 'string' },
+    { name: 'quote', type: 'tuple', components: [{ name: 'payer', type: 'address' }, { name: 'tokenId', type: 'uint256' }, { name: 'kind', type: 'uint8' }, { name: 'gearAmount', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'validUntil', type: 'uint256' }] },
+    { name: 'signature', type: 'bytes' }], outputs: [{ name: 'index', type: 'uint256' }] },
+  ...['NotAvatarOwner', 'TooManyFaces', 'DuplicateFace', 'EmptyHash', 'QuoteExpired', 'QuoteTooLong', 'QuoteNonceUsed', 'QuoteWrongPayer', 'QuoteWrongToken', 'QuoteWrongKind', 'BadQuoteSignature', 'FeeOutOfBounds', 'FeeNotWholeGear', 'FeesNotConfigured', 'BadURI', 'EnforcedPause'].map((name) => ({ type: 'error', name, inputs: [] })),
 ];
+const GEAR = '0x5880cD05605A549f1DAb01a53ca61Ee559244bD1';
+const ERC20 = [
+  { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'allowance', stateMutability: 'view', inputs: [{ name: 'o', type: 'address' }, { name: 's', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 's', type: 'address' }, { name: 'v', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+];
+const CONTRACT_MSG = { DuplicateFace: 'This exact face is already on this rock.', QuoteExpired: 'The price quote expired. Tap the button again for a fresh quote.', QuoteNonceUsed: 'That quote was already used. Tap again for a fresh one.',
+  NotAvatarOwner: 'Only the holder of this rock can add faces.', TooManyFaces: 'This rock has the maximum number of faces.', BadQuoteSignature: 'The price quote was not accepted (bad signature). Try again shortly.',
+  FeeOutOfBounds: 'The GEAR price moved outside the allowed range. Try again shortly.', EnforcedPause: 'CAPs Rocks is paused right now.' };
+function explainMintError(e) {
+  const name = e?.cause?.data?.errorName || e?.data?.errorName || (/(\w+)\(\)/.exec(String(e?.shortMessage || ''))||[])[1];
+  if (name && CONTRACT_MSG[name]) return CONTRACT_MSG[name];
+  if (/insufficient|exceeds balance/i.test(String(e?.shortMessage || e?.message))) return 'Not enough GEAR (or ETH for gas) in this wallet.';
+  return explainWalletError(e);
+}
+const fmtGear = (v) => (Number(v / 10000n) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
 /** A wallet has exactly one wallet face (no moods): always version 1, variant 0. One copy per wallet per rock. */
 const WALLET_VARIANT = 0;
 const pub = createPublicClient({ chain: base, transport: fallback([http('https://mainnet.base.org'), http()]) });
@@ -272,11 +292,55 @@ function updateMint() {
     stub.classList.remove('fm-hidden'); btn.disabled = false; btn.dataset.act = 'sim'; btn.textContent = 'Simulate paid wallet face (stub)'; m.textContent = ''; return;
   }
   if (S.coll.some((c) => c.kind === 'custom' && c.hash && c.hash.toLowerCase() === f.hash.toLowerCase())) { m.textContent = 'This exact custom face is already on this rock.'; return; }
-  stub.innerHTML = '<b>STUB: custom face.</b> Custom faces are paid in GEAR through <code>addCustomFace</code>, which needs a signed price quote from CAPs mind and the finished face file pinned to IPFS. Neither is live, so this button only simulates it; nothing is sent.';
-  stub.classList.remove('fm-hidden'); btn.disabled = false; btn.dataset.act = 'sim'; btn.textContent = 'Simulate add custom face (stub)'; m.textContent = '';
+  btn.disabled = false; btn.dataset.act = 'custom'; btn.textContent = `Mint this custom face on rock #${r.id} (~$0.25 in GEAR)`;
+  m.textContent = 'You pay about $0.25 of GEAR plus gas. Steps: price quote, approve GEAR (exact amount), save to IPFS, add to your rock.';
+}
+async function mintCustom() {
+  const m = $('mintMsg'), r = S.rock, f = S.face, btn = $('mintBtn');
+  btn.disabled = true; m.className = 'fm-msg';
+  try {
+    if (!(await wallet.ensureBase())) throw new Error('Switch your wallet to Base.');
+    const account = getAddress(wallet.state.account), wc = createWalletClient({ account, chain: base, transport: custom(wallet.provider()) });
+    const getQuote = async () => {
+      m.textContent = 'Getting the GEAR price quote…';
+      const res = await fetch(`${QUOTE_URL}?id=${r.id}&payer=${account}&kind=custom`);
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || j.message || 'Price quote failed (' + res.status + ').');
+      return parseQuote(j, { payer: account, tokenId: BigInt(r.id), kind: 1 });
+    };
+    let q = await getQuote();
+    const amt = q.quote.gearAmount;
+    const bal = await pub.readContract({ address: GEAR, abi: ERC20, functionName: 'balanceOf', args: [account] });
+    if (bal < amt) throw new Error(`Not enough GEAR: this face costs ${fmtGear(amt)} GEAR (~$${q.usd}), your wallet has ${fmtGear(bal)}.`);
+    const allowance = await pub.readContract({ address: GEAR, abi: ERC20, functionName: 'allowance', args: [account, ROCKS] });
+    if (allowance < amt) {
+      m.textContent = `Approve ${fmtGear(amt)} GEAR (~$${q.usd}) in your wallet (exact amount only)…`;
+      const ah = await wc.writeContract({ address: GEAR, abi: ERC20, functionName: 'approve', args: [ROCKS, amt] });
+      m.innerHTML = `Approving GEAR… <a href="https://basescan.org/tx/${ah}" target="_blank" rel="noopener">view</a>`;
+      await pub.waitForTransactionReceipt({ hash: ah });
+    }
+    m.textContent = 'Saving your face to IPFS…';
+    const pr = await fetch('/api/faces/pin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: f.code }) });
+    const pin = await pr.json().catch(() => ({}));
+    if (!pr.ok) throw new Error(pin.error || 'IPFS save failed (' + pr.status + ').');
+    if (pin.contentHash.toLowerCase() !== f.hash.toLowerCase()) throw new Error('The server render did not match this face. Nothing was sent.');
+    if (quoteExpired(q.quote)) { q = await getQuote(); if (q.quote.gearAmount > amt) { updateMint(); throw new Error('The GEAR price moved while approving. Tap again to approve the new amount.'); } }
+    const args = [BigInt(r.id), pin.contentHash, pin.uri, q.quote, q.signature];
+    m.textContent = `Confirm adding the face in your wallet (${fmtGear(q.quote.gearAmount)} GEAR + gas)…`;
+    await pub.simulateContract({ address: ROCKS, abi: ABI, functionName: 'addCustomFace', args, account });
+    const hash = await wc.writeContract({ address: ROCKS, abi: ABI, functionName: 'addCustomFace', args });
+    m.innerHTML = `Sent. Waiting for Base… <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view</a>`;
+    await pub.waitForTransactionReceipt({ hash });
+    await reloadRock(r.id); await selectRock(S.rocks.find((x) => x.id === r.id) || r);
+    const k = S.coll.findIndex((c) => c.kind === 'custom' && c.hash && c.hash.toLowerCase() === f.hash.toLowerCase());
+    if (k >= 0) { if (!S.coll[k].bm) S.coll[k] = { ...S.coll[k], bm: f.bm, layers: f.layers, note: undefined }; S.sel = k; S.view = 'coll'; refresh(); }
+    m.className = 'fm-msg ok'; m.innerHTML = `Custom face added to rock #${r.id}. <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">tx</a>`;
+    playPrint();
+  } catch (e) { m.className = 'fm-msg bad'; m.textContent = explainMintError(e); btn.disabled = false; }
 }
 $('mintBtn').onclick = async () => {
   const m = $('mintMsg'), r = S.rock, f = S.face; if (!r || !f) return;
+  if ($('mintBtn').dataset.act === 'custom') return mintCustom();
   if ($('mintBtn').dataset.act === 'sim') {
     const acct = wallet.state.account;
     (S.sim[r.id] = S.sim[r.id] || []).push({ ...f, sim: true, seed: S.mode === 'wallet' ? acct : acct, kind: S.mode, label: f.label + ' (simulated)' });
