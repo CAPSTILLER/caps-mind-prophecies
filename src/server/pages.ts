@@ -108,19 +108,23 @@ footer .gear-logo-link { display:inline-block; vertical-align:middle; line-heigh
 footer .gear-logo-link:hover, footer .gear-logo-link:focus-visible { opacity:1; }
 footer .gear-logo-link:active { opacity:.7; }
 footer .gear-logo-link img { height:1.35em; width:auto; display:block; image-rendering:pixelated; position:relative; top:-1px; }
+html:not(.cm-x) nav a.cm-h { display:none; }
+.brand { cursor:default; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
 </style>
+<script>(function(){var r=false;try{r=sessionStorage.getItem('cmx')==='1'}catch(e){}if(r){document.documentElement.classList.add('cm-x')}else{var q=location.pathname.split('/')[1]||'',h=location.hash.replace(/#/,'').replace(/^[/]/,'').split(/[/?&]/)[0];if(q==='publish'||q==='key'||h==='publish'||h==='key'){location.replace('/')}}})();</script>
 </head>
 <body>
 <header>
-  <div class="brand">CAPs MIND<small>VAULT PROPHECIES</small></div>
+  <div class="brand" id="cmBrand">CAPs MIND<small>VAULT PROPHECIES</small></div>
   <nav>
     <a href="/" class="${active === 'gallery' || active === 'detail' ? 'on' : ''}">Tablets</a>
-    <a href="/publish" class="${active === 'publish' ? 'on' : ''}">Publish</a>
+    <a href="/publish" class="cm-h ${active === 'publish' ? 'on' : ''}">Publish</a>
     <a href="/faces" class="${active === 'faces' ? 'on' : ''}">Faces</a>
-    <a href="/key" class="${active === 'key' ? 'on' : ''}">Key</a>
+    <a href="/key" class="cm-h ${active === 'key' ? 'on' : ''}">Key</a>
   </nav>
   <button type="button" class="walletbtn" id="walletBtn" aria-pressed="false" aria-label="Connect wallet">Connect wallet</button>
 </header>
+<script>(function(){var b=document.getElementById('cmBrand');if(!b)return;var n=0,t=0;b.addEventListener('click',function(){var now=Date.now();n=(now-t<3000)?n+1:1;t=now;if(n>=5){n=0;var on=document.documentElement.classList.toggle('cm-x');try{on?sessionStorage.setItem('cmx','1'):sessionStorage.removeItem('cmx')}catch(e){}}});})();</script>
 <main>
 ${body}
 </main>
