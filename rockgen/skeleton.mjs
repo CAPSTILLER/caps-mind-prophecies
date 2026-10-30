@@ -7,7 +7,7 @@ export async function asset(name) {
   if (files.has(name)) return files.get(name);
   const p = (async () => {
     const dir = process.env.ROCKGEN_ASSETS_DIR, url = process.env.ROCKGEN_ASSETS_URL;
-    if (url) { const r = await fetch(url.replace(/\/?$/, '/') + name); if (!r.ok) throw new Error('rockgen asset ' + name + ' ' + r.status); return new Uint8Array(await r.arrayBuffer()); }
+    if (url) { const tok = process.env.ROCKGEN_BLOB_TOKEN || process.env.BLOB_READ_WRITE_TOKEN; const r = await fetch(url.replace(/\/?$/, '/') + name, tok ? { headers: { authorization: 'Bearer ' + tok } } : undefined); if (!r.ok) throw new Error('rockgen asset ' + name + ' ' + r.status); return new Uint8Array(await r.arrayBuffer()); }
     return new Uint8Array(fs.readFileSync(path.join(dir || path.resolve('rockgen-assets'), name)));
   })();
   files.set(name, p); p.catch(() => files.delete(name)); return p;
