@@ -30,3 +30,6 @@ Signature: viem `verifyMessage` (EOA + ERC-1271/6492), then `ownerOf(id) == addr
 rockgen/generate.mjs, rockgen/faceTex.mjs, rockgen/lib/rng.mjs, rockgen/lib/traits.mjs, rockgen/lib/shapes.mjs,
 rockgen/lib/tablet/{body,traits,texture}.mjs, rig.json + torso_lo.glb, src/faces/engine.ts + its part kits (faces_v1 / wallet_pixel / custom parts).
 Pin `three` and `@gltf-transform/*` versions (geometry math). Any art change = new generatorVersion.
+
+## FROZEN v1
+Face generator v1, the signed-download message and the `/api/rocks/:id` paths are frozen. See FROZEN.md.
