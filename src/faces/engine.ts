@@ -1,8 +1,8 @@
 // @ts-nocheck -- straight port of CAPSTILLER/caps-rocks faces (wallet_pixel/faces_v1.js + custom/v2/render_v2.mjs).
 // Browser-safe: no fs, keccak via viem. Baked JSON parts are the canonical source (copied unchanged).
 import { keccak256, toBytes, bytesToHex } from 'viem';
-import K from './wallet_parts.json';
-import C from './custom_parts.json';
+import K from './wallet_parts.json' with { type: 'json' };
+import C from './custom_parts.json' with { type: 'json' };
 
 export const GW = 240, GH = 170;
 export const MOODS = ['Calm', 'Based', 'Fierce', 'Sorrow', 'Joy', 'Prophet', 'Void'];
