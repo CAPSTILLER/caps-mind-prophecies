@@ -44,22 +44,20 @@ export function facesPageBody(): string {
     <div>
       <div class="panel fm-ctl" id="walletCtl">
         <h3 style="margin:0">Wallet face</h3>
-        <p class="fm-traits" style="margin:4px 0 0">Seeded from a wallet address. Only that wallet can add it to its own rock: one identity per wallet, 7 moods.</p>
+        <p class="fm-traits" style="margin:4px 0 0">Generated from a wallet address alone. One face per wallet: only that wallet can mint it, once.</p>
         <label for="addrIn">Wallet address (connect, or paste any address to preview)</label>
         <input id="addrIn" placeholder="0x…" autocomplete="off" spellcheck="false"/>
-        <label for="moodSel">Mood (variant)</label>
-        <select id="moodSel"></select>
         <div class="fm-traits" id="traitsOut"></div>
       </div>
       <div class="panel fm-ctl fm-hidden" id="customCtl">
         <h3 style="margin:0">Custom face</h3>
-        <p class="fm-traits" style="margin:4px 0 0">Build your own from the engraving kit. Everything stays flat, engraved into the stone.</p>
+        <p class="fm-traits" style="margin:4px 0 0">Build your own face from the kit pieces: pick, place, move and flip each one, then mint. Everything is engraved flat into the stone.</p>
         <label for="borderSel">Border</label><select id="borderSel"></select>
         <label for="eyeSel">Eyes</label><select id="eyeSel"></select>
         <label for="browSel">Brows</label><select id="browSel"></select>
         <label for="noseSel">Nose</label><select id="noseSel"></select>
         <label for="mouthSel">Mouth</label><select id="mouthSel"></select>
-        <label for="moveSel">Move part</label><select id="moveSel"><option value="eye">Eyes</option><option value="brow">Brows</option><option value="nose">Nose</option><option value="mouth">Mouth</option></select>
+        <label for="moveSel">Selected piece</label><select id="moveSel"><option value="eye">Eyes</option><option value="brow">Brows</option><option value="nose">Nose</option><option value="mouth">Mouth</option></select>
         <div class="fm-pad"><span></span><button type="button" class="fm-btn" data-mv="0,-2">↑</button><span></span><button type="button" class="fm-btn" data-mv="-2,0">←</button><button type="button" class="fm-btn" data-mv="mirror" title="Flip eyes/brows">⇋</button><button type="button" class="fm-btn" data-mv="2,0">→</button><span></span><button type="button" class="fm-btn" data-mv="0,2">↓</button><span></span></div>
         <label for="codeIn">Face code (share / load)</label>
         <input id="codeIn" spellcheck="false"/>
