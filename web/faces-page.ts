@@ -2,6 +2,7 @@
 import { createPublicClient, createWalletClient, custom, fallback, http, getAddress, isAddress } from 'viem';
 import { base } from 'viem/chains';
 import { initWalletUi, explainWalletError } from './walletUi.js';
+import { createRockViewer } from './rock3d.js';
 import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns, bitmapFromSvg } from '../src/faces/engine.js';
 
 const ROCKS = '0x0fa575fd563517549e714acde968051a7310aadb';
@@ -70,6 +71,8 @@ function frame(laser) {
   sx.fillText(laser ? `ENGRAVING · ${laser.pct}%` : (S.face ? 'CAPs mind · ' + S.face.label : S.view === 'coll' ? 'face file not loaded' : 'enter a wallet address'), OX, stage.height - 40);
   sx.textAlign = 'right'; sx.fillText('CAPs ROCKS · face tablet 240×170 mm', stage.width - OX, stage.height - 40); sx.textAlign = 'left';
 }
+const viewer3d = createRockViewer($('rock3d'), (m) => { $('rock3dMsg').textContent = m || 'Drag to orbit · pinch or scroll to zoom. Tap a face in the collection to try it on.'; });
+function show3d() { const seed = S.rock ? S.rock.seed : (isAddress(S.addr || '') ? S.addr : (wallet.state.account || '0x0000000000000000000000000000000000000001')); viewer3d.setRock(seed); viewer3d.setFace(S.face ? S.face.bm : null); }
 function showStatic() { ex.clearRect(0, 0, engraved.width, engraved.height); if (S.face) paintBitmap(ex, S.face.bm, 0, 0, PX); frame(null); drawRock(); }
 
 let anim = null;
@@ -125,6 +128,7 @@ function refresh() {
   $('hashOut').textContent = S.face ? 'hash ' + S.face.hash.slice(0, 10) + '…' : '';
   $('rockTitle').textContent = S.rock ? `Rock #${S.rock.id} · ${S.view === 'coll' ? (S.coll[S.sel]?.active ? 'its displayed face' : 'previewing a collected face') : 'previewing a new face'}` : 'On your rock';
   if (!anim) showStatic();
+  show3d();
   renderColl(); updateMint(); updateActive(); updateExport();
 }
 function viewBuilder() { if (S.view !== 'builder') { S.view = 'builder'; if (anim) anim.stop = true; anim = null; } }
@@ -295,14 +299,31 @@ $('mintBtn').onclick = async () => {
 function updateExport() {
   const c = S.view === 'coll' ? S.coll[S.sel] : null, ok = !!(c && c.bm);
   for (const id of ['vidBtn', 'pngBtn', 'svgBtn', 'rockPngBtn']) $(id).disabled = !ok;
-  $('glbBtn').disabled = true;
-  $('exportLock').textContent = ok ? `Downloading ${c.active ? 'the displayed face' : 'face'} ${c.sim ? '(simulated) ' : '#' + c.i + ' '}of rock #${S.rock.id}. The rock GLB needs the CAPs Rocks render server (coming).` : 'Select a face from this rock\'s collection. Files unlock for faces that are on your rock.';
+  const g = !!(c && c.onchain && c.bm && wallet.state.account && eq(S.rock.owner, wallet.state.account));
+  $('glbBtn').disabled = $('glbZipBtn').disabled = !g;
+  $('exportLock').textContent = ok ? `Downloading ${c.active ? 'the displayed face' : 'face'} ${c.sim ? '(simulated) ' : '#' + c.i + ' '}of rock #${S.rock.id}.` + (g ? ' Rock GLB: sign a free message (no transaction) to prove you hold this rock.' : ' Rock GLB: only the holder of this rock, with an onchain face.') : 'Select a face from this rock\'s collection. Files unlock for faces that are on your rock.';
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 const baseName = () => `caps-rock-${S.rock ? S.rock.id : 'x'}-` + (S.face.kind === 'wallet' ? `face-${S.face.seed ? S.face.seed.slice(0, 8) : 'wallet'}` : `face-custom-${S.face.hash.slice(2, 10)}`);
 $('svgBtn').onclick = () => download(new Blob([renderSvg(S.face.bm, S.face.kind === 'wallet' ? 'wallet-v1-pixel' : 'custom-v2')], { type: 'image/svg+xml' }), baseName() + '.svg');
 $('pngBtn').onclick = () => { const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d'), s = 1024 / 240; drawTablet(g, 0, 312 / 2400 * 1024, s); paintBitmap(g, S.face.bm, 0, 350 / 2400 * 1024, s); c.toBlob((b) => download(b, baseName() + '.png'), 'image/png'); };
-$('rockPngBtn').onclick = () => { drawRock(); rock.toBlob((b) => download(b, baseName() + '-rock-preview.png'), 'image/png'); };
+$('rockPngBtn').onclick = () => { if (viewer3d.ready) return viewer3d.canvas.toBlob((b) => download(b, baseName() + '-rock-3d.png'), 'image/png'); drawRock(); rock.toBlob((b) => download(b, baseName() + '-rock-preview.png'), 'image/png'); };
+async function downloadGlb(zip) {
+  const m = $('exportMsg'), c = S.coll[S.sel], acct = wallet.state.account, id = S.rock.id;
+  try {
+    m.className = 'fm-msg'; m.textContent = 'Sign the download message in your wallet (free, no transaction)…';
+    const ch = await (await fetch(`/api/rocks/${id}/challenge?address=${acct}`)).json();
+    const wc = createWalletClient({ chain: base, transport: custom(wallet.provider()) });
+    const signature = await wc.signMessage({ account: getAddress(acct), message: ch.message });
+    m.textContent = 'Forging your rock with face #' + c.i + '…';
+    const r = await fetch(`/api/rocks/${id}/glb`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct, message: ch.message, signature, face: c.i, zip }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'download failed (' + r.status + ')');
+    const b = await r.blob(); download(b, `caps-rock-${id}-face-${c.i}.${zip ? 'zip' : 'glb'}`);
+    m.className = 'fm-msg ok'; m.textContent = `Downloaded (${(b.size / 1048576).toFixed(1)} MB). Rigged, 7 clips, metres, feet on the floor: ready for Mysbase.`;
+  } catch (e) { m.className = 'fm-msg bad'; m.textContent = explainWalletError(e); }
+}
+$('glbBtn').onclick = () => downloadGlb(false);
+$('glbZipBtn').onclick = () => downloadGlb(true);
 export function pickVideoType() {
   const MR = window.MediaRecorder; if (!MR) return null;
   return ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MR.isTypeSupported(t)) || null;
@@ -332,6 +353,6 @@ wallet.subscribe((st) => {
 });
 // test hook (headless screenshots only; never touches the chain): fake a connected wallet holding given rocks
 if (new URLSearchParams(location.search).has('fmtest')) (window as any).__faceMaker = { S, refresh, playPrint, recordPrint, setMode, selectRock,
-  fake: (acct, rocks) => { wallet.state.account = acct; S.addr = acct; $('addrIn').value = acct; S.rocks = rocks; fillRockSel(); } };
+  fake: (acct, rocks) => { wallet.state.account = acct; S.addr = acct; $('addrIn').value = acct; S.rocks = rocks; fillRockSel(); }, front: () => viewer3d.front(false) };
 syncCustomSelects(); refresh();
 void wallet.init();

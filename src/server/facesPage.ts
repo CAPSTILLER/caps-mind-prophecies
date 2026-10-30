@@ -59,7 +59,9 @@ export function facesPageBody(): string {
       </div>
       <div class="panel" style="margin-top:16px">
         <h3 style="margin:0 0 8px" id="rockTitle">On your rock</h3>
-        <canvas id="rock" width="800" height="560" style="width:100%;height:auto;border-radius:12px;background:#05070c"></canvas>
+        <canvas id="rock3d" style="width:100%;aspect-ratio:10/7;display:block;border-radius:12px;background:#05070c;touch-action:none"></canvas>
+        <p class="fm-locked" id="rock3dMsg" style="margin:6px 0 0">Drag to orbit · pinch or scroll to zoom. Tap a face in the collection to try it on.</p>
+        <canvas id="rock" width="800" height="560" style="display:none"></canvas>
       </div>
     </div>
     <div>
@@ -100,7 +102,8 @@ export function facesPageBody(): string {
           <button type="button" class="fm-btn" id="svgBtn" disabled>Face SVG</button>
           <button type="button" class="fm-btn" id="vidBtn" disabled>🎬 Print video</button>
           <button type="button" class="fm-btn" id="rockPngBtn" disabled>Rock preview PNG</button>
-          <button type="button" class="fm-btn" id="glbBtn" disabled title="Needs the CAPs Rocks render server">Rock GLB (soon)</button>
+          <button type="button" class="fm-btn primary" id="glbBtn" disabled>Rock GLB</button>
+          <button type="button" class="fm-btn" id="glbZipBtn" disabled title="For phones whose file picker greys out .glb">Rock GLB (.zip)</button>
         </div>
         <div class="fm-msg" id="exportMsg"></div>
       </div>

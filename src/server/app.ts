@@ -7,6 +7,7 @@ import { configFromEnv, type SiteConfig } from './config.js';
 import { keyPageBody } from './keyPage.js';
 import { facesPageBody } from './facesPage.js';
 import { page } from './pages.js';
+import { chainRockReader, registerRockRoutes, type RockReader } from './rocks.js';
 import { UPLOAD, chainUploadGate, sniffImageType, storeImage, uploadStore, gatewayUrl, pinataJwt, resolveSlot, clearSlotCache, extFor, type UploadGate } from './upload.js';
 import { galleryBody, previewBody, publishBody, tabletDetailBody } from './tabletPages.js';
 
@@ -21,8 +22,10 @@ export function createApp(
   reader: TabletReader = chainReader(cfg),
   gate: UploadGate = chainUploadGate(cfg),
   fetchImpl: typeof fetch = fetch,
+  rocks: RockReader = chainRockReader(cfg.rpcUrls),
 ) {
   const app = new Hono<AppEnv>();
+  registerRockRoutes(app, rocks, fetchImpl);
 
   async function safeState(): Promise<{ state: TabletsState | null; error: string | null }> {
     try {
