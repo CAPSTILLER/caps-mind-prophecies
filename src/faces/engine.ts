@@ -136,3 +136,11 @@ export function engraveRuns(bm, layers) {
   return out;
 }
 export { bytesToHex };
+
+/** Read a face SVG made by renderSvg() back into a bitmap (used for custom faces pinned on IPFS). Returns null if it isn't one. */
+export function bitmapFromSvg(svg) {
+  const m = /<path fill="#eef2f5" d="([^"]*)"/.exec(svg || ''); if (!m) return null;
+  const bm = new Uint8Array(GW * GH), re = /M(\d+) (\d+)h(\d+)/g; let r;
+  while ((r = re.exec(m[1]))) { const x = r[1] / 10, y = (r[2] - 350) / 10, w = r[3] / 10; if (y < 0 || y >= GH || x < 0 || x + w > GW) return null; for (let i = 0; i < w; i++) bm[y * GW + x + i] = 1; }
+  return bm;
+}

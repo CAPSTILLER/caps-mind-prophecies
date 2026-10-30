@@ -19,15 +19,36 @@ export function facesPageBody(): string {
 .fm-msg { font-size:13px; margin-top:8px; min-height:1.2em; }
 .fm-hidden { display:none !important; }
 .fm-locked { color:var(--dim); font-size:13px; }
+.fm-coll { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:10px; }
+.fm-card { border:1px solid var(--line); border-radius:12px; padding:8px; background:#0a0f1a; cursor:pointer; font-size:12px; color:var(--dim); }
+.fm-card.sel { outline:2px solid var(--walletBlue); }
+.fm-card canvas, .fm-card img { width:100%; height:auto; display:block; border-radius:8px; background:#24467f; }
+.fm-card b { color:var(--text); }
+.fm-badge { display:inline-block; background:var(--walletBlue); color:#fff; border-radius:999px; padding:1px 8px; font-size:11px; margin-left:4px; }
+.fm-badge.sim { background:#f5b942; color:#111; }
+.fm-step { font-size:12px; letter-spacing:.08em; color:var(--walletBlue); text-transform:uppercase; }
 </style>
 <section>
   <h1 style="margin:4px 0 2px">Face Maker</h1>
-  <p class="fm-locked" style="margin-top:0">Engrave a face onto your CAPs Rock's blank tablet with the CAPs mind laser. Anyone can preview any face. Only the rock's owner can mint one, and the files and print video unlock after minting.</p>
-  <div class="fm-tabs" role="tablist">
-    <button type="button" id="tabWallet" class="on" role="tab">Wallet face</button>
-    <button type="button" id="tabCustom" role="tab">Custom face</button>
+  <p class="fm-locked" style="margin-top:0">Connect your wallet, pick one of your CAPs Rocks, and see every face collected on it. Add faces, choose which one the rock displays, and download the rock with that face.</p>
+
+  <div class="panel fm-ctl">
+    <div class="fm-step">1 · Your rock</div>
+    <label for="rockSel">CAPs Rocks <a href="https://basescan.org/address/${CAPS_ROCKS_ADDRESS}" target="_blank" rel="noopener">${CAPS_ROCKS_ADDRESS.slice(0, 6)}…${CAPS_ROCKS_ADDRESS.slice(-4)}</a> on Base held by your wallet</label>
+    <select id="rockSel"><option value="">Connect your wallet to find your rocks</option></select>
+    <div class="fm-traits" id="rockInfo"></div>
   </div>
-  <div class="fm-grid">
+
+  <div class="panel" style="margin-top:16px">
+    <div class="fm-step">2 · Face collection</div>
+    <p class="fm-locked" id="collNote" style="margin:4px 0 0">Pick a rock to see its faces.</p>
+    <div class="fm-coll" id="coll"></div>
+    <div class="row" style="margin-top:10px"><button type="button" class="fm-btn primary" id="activeBtn" disabled>Display this face on the rock</button></div>
+    <div class="fm-stub fm-hidden" id="activeStub"></div>
+    <div class="fm-msg" id="activeMsg"></div>
+  </div>
+
+  <div class="fm-grid" style="margin-top:16px">
     <div>
       <div class="panel fm-stage"><canvas id="stage" width="1200" height="900" aria-label="Engraving preview"></canvas>
         <div class="row">
@@ -37,47 +58,49 @@ export function facesPageBody(): string {
         </div>
       </div>
       <div class="panel" style="margin-top:16px">
-        <h3 style="margin:0 0 8px">On your rock</h3>
+        <h3 style="margin:0 0 8px" id="rockTitle">On your rock</h3>
         <canvas id="rock" width="800" height="560" style="width:100%;height:auto;border-radius:12px;background:#05070c"></canvas>
       </div>
     </div>
     <div>
-      <div class="panel fm-ctl" id="walletCtl">
-        <h3 style="margin:0">Wallet face</h3>
-        <p class="fm-traits" style="margin:4px 0 0">Generated from a wallet address alone. One face per wallet: only that wallet can mint it, once.</p>
-        <label for="addrIn">Wallet address (connect, or paste any address to preview)</label>
-        <input id="addrIn" placeholder="0x…" autocomplete="off" spellcheck="false"/>
-        <div class="fm-traits" id="traitsOut"></div>
-      </div>
-      <div class="panel fm-ctl fm-hidden" id="customCtl">
-        <h3 style="margin:0">Custom face</h3>
-        <p class="fm-traits" style="margin:4px 0 0">Build your own face from the kit pieces: pick, place, move and flip each one, then mint. Everything is engraved flat into the stone.</p>
-        <label for="borderSel">Border</label><select id="borderSel"></select>
-        <label for="eyeSel">Eyes</label><select id="eyeSel"></select>
-        <label for="browSel">Brows</label><select id="browSel"></select>
-        <label for="noseSel">Nose</label><select id="noseSel"></select>
-        <label for="mouthSel">Mouth</label><select id="mouthSel"></select>
-        <label for="moveSel">Selected piece</label><select id="moveSel"><option value="eye">Eyes</option><option value="brow">Brows</option><option value="nose">Nose</option><option value="mouth">Mouth</option></select>
-        <div class="fm-pad"><span></span><button type="button" class="fm-btn" data-mv="0,-2">↑</button><span></span><button type="button" class="fm-btn" data-mv="-2,0">←</button><button type="button" class="fm-btn" data-mv="mirror" title="Flip eyes/brows">⇋</button><button type="button" class="fm-btn" data-mv="2,0">→</button><span></span><button type="button" class="fm-btn" data-mv="0,2">↓</button><span></span></div>
-        <label for="codeIn">Face code (share / load)</label>
-        <input id="codeIn" spellcheck="false"/>
-        <div class="fm-msg" id="customMsg"></div>
-      </div>
-      <div class="panel" style="margin-top:16px">
-        <h3 style="margin:0 0 6px">Mint to your rock</h3>
-        <div class="fm-traits">CAPs Rocks <a href="https://basescan.org/address/${CAPS_ROCKS_ADDRESS}" target="_blank" rel="noopener">${CAPS_ROCKS_ADDRESS.slice(0, 6)}…${CAPS_ROCKS_ADDRESS.slice(-4)}</a> on Base</div>
-        <div class="fm-ctl"><label for="rockSel">Your rock</label><select id="rockSel"><option value="">Connect your wallet to find your rocks</option></select></div>
-        <div class="row"><button type="button" class="fm-btn primary" id="mintBtn" disabled>Mint face</button></div>
+      <div class="panel fm-ctl">
+        <div class="fm-step">3 · Add a face to this rock</div>
+        <div class="fm-tabs" role="tablist" style="margin-top:8px">
+          <button type="button" id="tabWallet" class="on" role="tab">Wallet face</button>
+          <button type="button" id="tabCustom" role="tab">Custom face</button>
+        </div>
+        <div id="walletCtl">
+          <p class="fm-traits" style="margin:0">Your wallet face is generated from your wallet address alone. Each wallet can put its face on a rock once. Free for the wallet that forged the rock; any other wallet holding the rock pays GEAR.</p>
+          <label for="addrIn">Wallet address (your connected wallet, or paste any address to preview)</label>
+          <input id="addrIn" placeholder="0x…" autocomplete="off" spellcheck="false"/>
+          <div class="fm-traits" id="traitsOut"></div>
+        </div>
+        <div id="customCtl" class="fm-hidden">
+          <p class="fm-traits" style="margin:0">Build your own face from the kit pieces: pick, place, move and flip each one, then add it to the rock.</p>
+          <label for="borderSel">Border</label><select id="borderSel"></select>
+          <label for="eyeSel">Eyes</label><select id="eyeSel"></select>
+          <label for="browSel">Brows</label><select id="browSel"></select>
+          <label for="noseSel">Nose</label><select id="noseSel"></select>
+          <label for="mouthSel">Mouth</label><select id="mouthSel"></select>
+          <label for="moveSel">Selected piece</label><select id="moveSel"><option value="eye">Eyes</option><option value="brow">Brows</option><option value="nose">Nose</option><option value="mouth">Mouth</option></select>
+          <div class="fm-pad"><span></span><button type="button" class="fm-btn" data-mv="0,-2">↑</button><span></span><button type="button" class="fm-btn" data-mv="-2,0">←</button><button type="button" class="fm-btn" data-mv="mirror" title="Flip eyes/brows">⇋</button><button type="button" class="fm-btn" data-mv="2,0">→</button><span></span><button type="button" class="fm-btn" data-mv="0,2">↓</button><span></span></div>
+          <label for="codeIn">Face code (share / load)</label>
+          <input id="codeIn" spellcheck="false"/>
+          <div class="fm-msg" id="customMsg"></div>
+        </div>
+        <div class="row" style="margin-top:10px"><button type="button" class="fm-btn primary" id="mintBtn" disabled>Add face</button></div>
         <div class="fm-stub fm-hidden" id="stubNote"></div>
         <div class="fm-msg" id="mintMsg"></div>
       </div>
       <div class="panel" style="margin-top:16px">
-        <h3 style="margin:0 0 6px">Export</h3>
-        <p class="fm-locked" id="exportLock">Unlocks after this face is minted to a rock you own.</p>
+        <div class="fm-step">4 · Download</div>
+        <p class="fm-locked" id="exportLock">Select a face from this rock's collection. Files unlock for faces that are on your rock.</p>
         <div class="row">
+          <button type="button" class="fm-btn" id="pngBtn" disabled>Face PNG</button>
+          <button type="button" class="fm-btn" id="svgBtn" disabled>Face SVG</button>
           <button type="button" class="fm-btn" id="vidBtn" disabled>🎬 Print video</button>
-          <button type="button" class="fm-btn" id="pngBtn" disabled>PNG</button>
-          <button type="button" class="fm-btn" id="svgBtn" disabled>SVG</button>
+          <button type="button" class="fm-btn" id="rockPngBtn" disabled>Rock preview PNG</button>
+          <button type="button" class="fm-btn" id="glbBtn" disabled title="Needs the CAPs Rocks render server">Rock GLB (soon)</button>
         </div>
         <div class="fm-msg" id="exportMsg"></div>
       </div>

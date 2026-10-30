@@ -2,7 +2,7 @@
 import { createPublicClient, createWalletClient, custom, fallback, http, getAddress, isAddress } from 'viem';
 import { base } from 'viem/chains';
 import { initWalletUi, explainWalletError } from './walletUi.js';
-import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns } from '../src/faces/engine.js';
+import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns, bitmapFromSvg } from '../src/faces/engine.js';
 
 const ROCKS = '0x0fa575fd563517549e714acde968051a7310aadb';
 const FACE_T = { type: 'tuple', components: [{ name: 'kind', type: 'uint8' }, { name: 'seed', type: 'address' }, { name: 'generatorVersion', type: 'uint16' }, { name: 'variant', type: 'uint32' }, { name: 'addedAt', type: 'uint64' }, { name: 'contentHash', type: 'bytes32' }, { name: 'uri', type: 'string' }] };
@@ -14,19 +14,20 @@ const ABI = [
     { name: 'faceCount', type: 'uint256' }, { name: 'hasActiveFace', type: 'bool' }, { name: 'activeFaceIndex', type: 'uint256' },
     { name: 'poseCount', type: 'uint256' }, { name: 'hasActivePose', type: 'bool' }, { name: 'activePoseIndex', type: 'uint256' }] }] },
   { type: 'function', name: 'facesOf', stateMutability: 'view', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }], outputs: [{ type: 'tuple[]', components: FACE_T.components }] },
+  { type: 'function', name: 'setActiveFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'index', type: 'uint256' }], outputs: [] },
   { type: 'function', name: 'addWalletFace', stateMutability: 'nonpayable', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'faceGeneratorVersion', type: 'uint16' }, { name: 'variant', type: 'uint32' }], outputs: [{ type: 'uint256' }] },
 ];
-/** One face per wallet: always the same fixed onchain value (variant 0). No moods. */
+/** A wallet has exactly one wallet face (no moods): always version 1, variant 0. One copy per wallet per rock. */
 const WALLET_VARIANT = 0;
 const pub = createPublicClient({ chain: base, transport: fallback([http('https://mainnet.base.org'), http()]) });
 const $ = (id) => document.getElementById(id);
 const wallet = initWalletUi();
 
 // ---------------- state ----------------
-const S = { mode: 'wallet', addr: '', layout: structuredClone(DEFAULT_LAYOUT), face: null, rocks: [], unlocked: new Set() };
-const faceKey = () => S.face ? S.face.hash : '';
+const S = { mode: 'wallet', addr: '', layout: structuredClone(DEFAULT_LAYOUT), face: null, rocks: [], rock: null, coll: [], sel: -1, view: 'builder', sim: {} };
 
 function currentFace() {
+  if (S.view === 'coll') { const c = S.coll[S.sel]; return c && c.bm ? c : null; }
   if (S.mode === 'wallet') {
     if (!isAddress(S.addr)) return null;
     const t = traits(getAddress(S.addr), WALLET_VARIANT, WALLET_FACE_VERSION), f = composeWallet(t);
@@ -66,7 +67,7 @@ function frame(laser) {
     sx.fillStyle = glow; sx.beginPath(); sx.arc(lx, ly, 26, 0, Math.PI * 2); sx.fill();
   }
   sx.fillStyle = '#8b9bb8'; sx.font = '22px system-ui, sans-serif';
-  sx.fillText(laser ? `ENGRAVING · ${laser.pct}%` : (S.face ? 'CAPs mind · ' + S.face.label : 'enter a wallet address'), OX, stage.height - 40);
+  sx.fillText(laser ? `ENGRAVING · ${laser.pct}%` : (S.face ? 'CAPs mind · ' + S.face.label : S.view === 'coll' ? 'face file not loaded' : 'enter a wallet address'), OX, stage.height - 40);
   sx.textAlign = 'right'; sx.fillText('CAPs ROCKS · face tablet 240×170 mm', stage.width - OX, stage.height - 40); sx.textAlign = 'left';
 }
 function showStatic() { ex.clearRect(0, 0, engraved.width, engraved.height); if (S.face) paintBitmap(ex, S.face.bm, 0, 0, PX); frame(null); drawRock(); }
@@ -111,19 +112,22 @@ function drawRock() {
 // ---------------- controls ----------------
 CUSTOM.borders.forEach((b, i) => $('borderSel').add(new Option(b.name, String(i))));
 for (const t of ORDER) CUSTOM.parts[t].forEach((p, i) => $(t + 'Sel').add(new Option(p.name, String(i))));
-if (ORDER.includes('brow')) $('browSel').add(new Option('None', '-1'));
-$('noseSel').add(new Option('None', '-1'));
+$('browSel').add(new Option('None', '-1')); $('noseSel').add(new Option('None', '-1'));
+const short = (a) => a.slice(0, 6) + '…' + a.slice(-4);
+const eq = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 function refresh() {
   let msg = '';
-  try { S.face = currentFace(); } catch (e) { msg = String(e.message || e); }
-  if (S.mode === 'custom') { $('customMsg').textContent = msg; $('customMsg').className = 'fm-msg ' + (msg ? 'bad' : ''); if (!msg) $('codeIn').value = S.face.code; }
-  if (S.mode === 'wallet' && S.face) { const n = traitNames(S.face.t); delete n.mood; $('traitsOut').innerHTML = Object.entries(n).map(([k, v]) => `${k}: <b>${v === true ? 'yes' : v === false ? 'no' : v}</b>`).join(' · '); }
+  try { S.face = currentFace(); } catch (e) { S.face = null; msg = String(e.message || e); }
+  if (S.view === 'builder' && S.mode === 'custom') { $('customMsg').textContent = msg; $('customMsg').className = 'fm-msg ' + (msg ? 'bad' : ''); if (!msg) $('codeIn').value = S.face.code; }
+  if (S.view === 'builder' && S.mode === 'wallet' && S.face) { const n = traitNames(S.face.t); delete n.mood; $('traitsOut').innerHTML = Object.entries(n).map(([k, v]) => `${k}: <b>${v === true ? 'yes' : v === false ? 'no' : v}</b>`).join(' · '); }
   else if (S.mode === 'wallet') $('traitsOut').textContent = '';
   $('hashOut').textContent = S.face ? 'hash ' + S.face.hash.slice(0, 10) + '…' : '';
+  $('rockTitle').textContent = S.rock ? `Rock #${S.rock.id} · ${S.view === 'coll' ? (S.coll[S.sel]?.active ? 'its displayed face' : 'previewing a collected face') : 'previewing a new face'}` : 'On your rock';
   if (!anim) showStatic();
-  updateMint(); updateExport();
+  renderColl(); updateMint(); updateActive(); updateExport();
 }
+function viewBuilder() { if (S.view !== 'builder') { S.view = 'builder'; if (anim) anim.stop = true; anim = null; } }
 function syncCustomSelects() {
   $('borderSel').value = String(S.layout.border);
   for (const t of ORDER) { const p = S.layout.parts.find((q) => q.t === t); $(t + 'Sel').value = p ? String(p.id) : '-1'; }
@@ -135,94 +139,170 @@ function setPart(t, id) {
   rest.push({ t, id, x: centerX(t, id), y: old ? old.y : yDef, ...(old && old.mirror ? { mirror: true } : {}) }); S.layout.parts = rest;
 }
 $('tabWallet').onclick = () => setMode('wallet'); $('tabCustom').onclick = () => setMode('custom');
-function setMode(m) { S.mode = m; $('tabWallet').classList.toggle('on', m === 'wallet'); $('tabCustom').classList.toggle('on', m === 'custom'); $('walletCtl').classList.toggle('fm-hidden', m !== 'wallet'); $('customCtl').classList.toggle('fm-hidden', m !== 'custom'); if (anim) anim.stop = true; anim = null; refresh(); }
-$('addrIn').oninput = () => { S.addr = $('addrIn').value.trim(); refresh(); };
-$('borderSel').onchange = () => { S.layout.border = Number($('borderSel').value); refresh(); };
-for (const t of ORDER) $(t + 'Sel').onchange = () => { setPart(t, Number($(t + 'Sel').value)); refresh(); };
+function setMode(m) { S.mode = m; viewBuilder(); $('tabWallet').classList.toggle('on', m === 'wallet'); $('tabCustom').classList.toggle('on', m === 'custom'); $('walletCtl').classList.toggle('fm-hidden', m !== 'wallet'); $('customCtl').classList.toggle('fm-hidden', m !== 'custom'); if (anim) anim.stop = true; anim = null; refresh(); }
+$('addrIn').oninput = () => { S.addr = $('addrIn').value.trim(); viewBuilder(); refresh(); };
+$('borderSel').onchange = () => { S.layout.border = Number($('borderSel').value); viewBuilder(); refresh(); };
+for (const t of ORDER) $(t + 'Sel').onchange = () => { setPart(t, Number($(t + 'Sel').value)); viewBuilder(); refresh(); };
 document.querySelectorAll('[data-mv]').forEach((b) => (b.onclick = () => {
   const t = $('moveSel').value, p = S.layout.parts.find((q) => q.t === t); if (!p) return;
   if (b.dataset.mv === 'mirror') { if (t === 'eye' || t === 'brow') p.mirror ? delete p.mirror : (p.mirror = true); }
   else { const [dx, dy] = b.dataset.mv.split(',').map(Number); p.x = Math.max(0, Math.min(255, p.x + dx)); p.y = Math.max(0, Math.min(255, p.y + dy)); }
-  refresh();
+  viewBuilder(); refresh();
 }));
-$('codeIn').onchange = () => { try { const l = decodeLayout($('codeIn').value.trim()); composeCustom(l); S.layout = l; syncCustomSelects(); refresh(); } catch (e) { $('customMsg').textContent = 'That face code does not load: ' + (e.message || e); } };
+$('codeIn').onchange = () => { try { const l = decodeLayout($('codeIn').value.trim()); composeCustom(l); S.layout = l; syncCustomSelects(); viewBuilder(); refresh(); } catch (e) { $('customMsg').textContent = 'That face code does not load: ' + (e.message || e); } };
 $('engraveBtn').onclick = () => playPrint();
 
-// ---------------- rocks + mint ----------------
+// ---------------- 1. rocks held by the wallet ----------------
 async function loadRocks() {
   const acct = wallet.state.account; S.rocks = []; const sel = $('rockSel'); sel.innerHTML = '';
-  if (!acct) { sel.add(new Option('Connect your wallet to find your rocks', '')); updateMint(); return; }
+  if (!acct) { sel.add(new Option('Connect your wallet to find your rocks', '')); await selectRock(null); return; }
   sel.add(new Option('Looking for your rocks…', ''));
   try {
     const n = Number(await pub.readContract({ address: ROCKS, abi: ABI, functionName: 'totalMinted' }));
     for (let id = 1; id <= Math.min(n, 500); id++) {
       const v = await pub.readContract({ address: ROCKS, abi: ABI, functionName: 'rockView', args: [BigInt(id)] });
-      if (v.owner.toLowerCase() !== acct.toLowerCase()) continue;
-      const faces = Number(v.faceCount) ? await pub.readContract({ address: ROCKS, abi: ABI, functionName: 'facesOf', args: [BigInt(id), 0n, 1000n] }) : [];
-      S.rocks.push({ id, seed: v.avatar.seed, faces });
+      if (!eq(v.owner, acct)) continue;
+      S.rocks.push(await readRock(id, v));
     }
   } catch (e) { sel.innerHTML = ''; sel.add(new Option('Could not read CAPs Rocks: ' + (e.shortMessage || e.message), '')); return; }
-  sel.innerHTML = '';
+  fillRockSel();
+}
+async function readRock(id, v) {
+  v = v || (await pub.readContract({ address: ROCKS, abi: ABI, functionName: 'rockView', args: [BigInt(id)] }));
+  const faces = Number(v.faceCount) ? await pub.readContract({ address: ROCKS, abi: ABI, functionName: 'facesOf', args: [BigInt(id), 0n, 1000n] }) : [];
+  return { id, owner: v.owner, seed: v.avatar.seed, faces: [...faces], hasActive: v.hasActiveFace, active: Number(v.activeFaceIndex) };
+}
+function fillRockSel(keep) {
+  const sel = $('rockSel'), acct = wallet.state.account; sel.innerHTML = '';
   if (!S.rocks.length) sel.add(new Option('No CAPs Rock in this wallet yet', ''));
-  for (const r of S.rocks) sel.add(new Option(`Rock #${r.id}${r.seed.toLowerCase() === acct.toLowerCase() ? ' (your wallet seed)' : ''} · ${r.faces.length} face${r.faces.length === 1 ? '' : 's'}`, String(r.id)));
-  markMintedFromChain(); updateMint(); updateExport();
+  for (const r of S.rocks) sel.add(new Option(`Rock #${r.id}${eq(r.seed, acct) ? ' · forged by this wallet' : ''} · ${r.faces.length} face${r.faces.length === 1 ? '' : 's'}`, String(r.id)));
+  if (keep) sel.value = String(keep);
+  void selectRock(S.rocks.find((r) => String(r.id) === sel.value) || null);
 }
-function markMintedFromChain() { // a face already on one of your rocks counts as minted, so its files unlock
-  const acct = (wallet.state.account || '').toLowerCase();
-  for (const r of S.rocks) for (const f of r.faces) {
-    if (Number(f.kind) === 0 && f.seed.toLowerCase() === acct) S.unlocked.add(`w:${acct}`);
-    if (Number(f.kind) === 1) S.unlocked.add('h:' + f.contentHash.toLowerCase());
+$('rockSel').onchange = () => void selectRock(S.rocks.find((r) => String(r.id) === $('rockSel').value) || null);
+
+// ---------------- 2. face collection ----------------
+const gw = (u) => u.startsWith('ipfs://') ? 'https://ipfs.io/ipfs/' + u.slice(7) : u;
+async function faceFromChain(f, i, r) {
+  const base = { i, onchain: true, seed: f.seed, active: r.hasActive && r.active === i };
+  if (Number(f.kind) === 0) {
+    const v = Number(f.generatorVersion), variant = Number(f.variant);
+    if (v !== WALLET_FACE_VERSION) return { ...base, kind: 'wallet', label: `wallet face ${short(f.seed)} (generator v${v} not in this app)` };
+    const t = traits(getAddress(f.seed), variant, v), c = composeWallet(t);
+    return { ...base, ...c, kind: 'wallet', t, version: v, variant, hash: contentHash(c.bm), label: `wallet face ${short(f.seed)}`, free: eq(f.seed, r.seed) };
   }
-}
-const unlockKey = () => !S.face ? '' : S.face.kind === 'wallet' ? `w:${S.addr.toLowerCase()}` : 'h:' + S.face.hash.toLowerCase();
-function selectedRock() { return S.rocks.find((r) => String(r.id) === $('rockSel').value); }
-function updateMint() {
-  const acct = wallet.state.account, r = selectedRock(), btn = $('mintBtn'), stub = $('stubNote');
-  stub.classList.add('fm-hidden'); btn.disabled = true; btn.textContent = 'Mint face';
-  if (!S.face) return;
-  if (S.mode === 'wallet') {
-    if (!acct) { $('mintMsg').textContent = 'Connect the wallet this face belongs to.'; return; }
-    if (acct.toLowerCase() !== S.addr.toLowerCase()) { $('mintMsg').textContent = 'Preview only: a wallet face can only be added by its own wallet.'; return; }
-    if (!r) { $('mintMsg').textContent = 'You need a CAPs Rock to engrave onto.'; return; }
-    if (S.unlocked.has(unlockKey())) { const on = S.rocks.find((x) => x.faces.some((f) => Number(f.kind) === 0 && f.seed.toLowerCase() === acct.toLowerCase())); $('mintMsg').textContent = `Minted: your wallet face is already on rock #${on ? on.id : '?'}. One face per wallet, so it can't be minted again.`; return; }
-    if (r.seed.toLowerCase() !== acct.toLowerCase()) {
-      stub.textContent = 'STUB: this rock was forged by another wallet, so adding your wallet face costs GEAR (addWalletFacePaid). That needs the CAPs mind price-quote server, which is not live yet.'; stub.classList.remove('fm-hidden'); $('mintMsg').textContent = ''; return;
-    }
-    btn.disabled = false; btn.textContent = `Mint my wallet face to rock #${r.id} — free, gas only`; $('mintMsg').textContent = '';
-  } else {
-    stub.innerHTML = '<b>STUB — not onchain yet.</b> Custom faces are paid in GEAR through <code>addCustomFace</code>, which needs a signed price quote from CAPs mind and the face file pinned to IPFS. Neither service is live, so this button only simulates the mint (nothing is sent) so you can try the export.';
-    stub.classList.remove('fm-hidden'); btn.disabled = false; btn.textContent = 'Simulate mint (stub)'; $('mintMsg').textContent = '';
-  }
-}
-$('rockSel').onchange = () => { updateMint(); };
-$('mintBtn').onclick = async () => {
-  const msg = $('mintMsg');
-  if (S.mode === 'custom') { S.unlocked.add(unlockKey()); msg.textContent = 'Simulated. Nothing was sent onchain.'; updateExport(); return; }
-  const r = selectedRock(); if (!r) return;
+  const out = { ...base, kind: 'custom', uri: f.uri, hash: f.contentHash, label: 'custom ' + f.contentHash.slice(0, 10) };
   try {
-    $('mintBtn').disabled = true; msg.textContent = 'Confirm in your wallet…';
+    const txt = await (await fetch(gw(f.uri))).text(), bm = bitmapFromSvg(txt);
+    if (bm && contentHash(bm).toLowerCase() === f.contentHash.toLowerCase()) return { ...out, bm, layers: new Uint8Array(GW * GH).fill(7) };
+    out.img = gw(f.uri); out.note = 'file loaded but not a CAPs face bitmap';
+  } catch { out.note = 'face file could not be loaded'; }
+  return out;
+}
+async function selectRock(r) {
+  S.rock = r; S.coll = []; S.sel = -1;
+  const acct = wallet.state.account;
+  $('rockInfo').innerHTML = r ? `Forged by <b>${short(r.seed)}</b>${eq(r.seed, acct) ? ' (this wallet: your wallet face is free here)' : ' (another wallet: your wallet face costs GEAR here)'} · held by <b>${short(r.owner)}</b> · ${r.faces.length} face(s) onchain` : '';
+  if (r) {
+    S.coll = await Promise.all(r.faces.map((f, i) => faceFromChain(f, i, r)));
+    for (const s of S.sim[r.id] || []) S.coll.push(s);
+    S.sel = r.hasActive ? r.active : S.coll.length ? 0 : -1;
+    S.view = S.sel >= 0 ? 'coll' : 'builder';
+  } else S.view = 'builder';
+  refresh();
+}
+function thumb(bm) { const c = document.createElement('canvas'); c.width = 240; c.height = 178; const g = c.getContext('2d'); drawTablet(g, 0, 0, 1); paintBitmap(g, bm, 0, 3.8, 1); return c; }
+function renderColl() {
+  const box = $('coll'); box.innerHTML = '';
+  $('collNote').textContent = !wallet.state.account ? 'Connect your wallet to see your rocks and their faces.' : !S.rock ? 'Pick one of your rocks above.' : S.coll.length ? `Rock #${S.rock.id} has ${S.coll.length} face(s). Tap one to preview it; the rock displays the one marked “on rock”.` : `Rock #${S.rock.id} has no faces yet. Add one below.`;
+  S.coll.forEach((c, k) => {
+    const d = document.createElement('div'); d.className = 'fm-card' + (S.view === 'coll' && S.sel === k ? ' sel' : '');
+    if (c.bm) d.appendChild(thumb(c.bm)); else if (c.img) { const im = new Image(); im.src = c.img; im.alt = c.label; d.appendChild(im); } else d.appendChild(Object.assign(document.createElement('div'), { textContent: c.note || 'not renderable', style: 'padding:30px 4px' }));
+    const who = c.kind === 'wallet' ? `Wallet face · ${short(c.seed)}${c.free ? ' · forger (free)' : ''}` : `Custom · by ${short(c.seed)}`;
+    d.insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><b>#${c.sim ? '–' : c.i}</b> ${who}${c.active ? '<span class="fm-badge">on rock</span>' : ''}${c.sim ? '<span class="fm-badge sim">simulated</span>' : ''}</div>`);
+    d.onclick = () => { S.sel = k; S.view = 'coll'; if (anim) anim.stop = true; anim = null; refresh(); };
+    box.appendChild(d);
+  });
+}
+
+// ---------------- active (displayed) face: real setActiveFace ----------------
+function updateActive() {
+  const b = $('activeBtn'), st = $('activeStub'), c = S.view === 'coll' ? S.coll[S.sel] : null, acct = wallet.state.account;
+  st.classList.add('fm-hidden'); b.disabled = true; b.textContent = 'Display this face on the rock';
+  if (!S.rock || !c) return;
+  if (c.sim) { st.textContent = 'This face is only simulated (not onchain), so it cannot be displayed yet.'; st.classList.remove('fm-hidden'); return; }
+  if (c.active) { b.textContent = `Displayed on rock #${S.rock.id}`; return; }
+  if (!eq(acct, S.rock.owner)) return;
+  b.disabled = false; b.textContent = `Display face #${c.i} on rock #${S.rock.id}`;
+}
+$('activeBtn').onclick = async () => {
+  const c = S.coll[S.sel], r = S.rock, m = $('activeMsg'); if (!c || !r || c.sim) return;
+  try {
+    $('activeBtn').disabled = true; m.textContent = 'Confirm in your wallet (gas only)…';
     if (!(await wallet.ensureBase())) throw new Error('Switch your wallet to Base.');
-    const account = getAddress(wallet.state.account);
-    const wc = createWalletClient({ account, chain: base, transport: custom(wallet.provider()) });
+    const account = getAddress(wallet.state.account), wc = createWalletClient({ account, chain: base, transport: custom(wallet.provider()) });
+    await pub.simulateContract({ address: ROCKS, abi: ABI, functionName: 'setActiveFace', args: [BigInt(r.id), BigInt(c.i)], account });
+    const hash = await wc.writeContract({ address: ROCKS, abi: ABI, functionName: 'setActiveFace', args: [BigInt(r.id), BigInt(c.i)] });
+    m.innerHTML = `Sent… <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view</a>`;
+    await pub.waitForTransactionReceipt({ hash });
+    m.innerHTML = `Rock #${r.id} now displays face #${c.i}. <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">tx</a>`;
+    await reloadRock(r.id);
+  } catch (e) { m.textContent = explainWalletError(e); updateActive(); }
+};
+async function reloadRock(id) { const k = S.rocks.findIndex((x) => x.id === id); if (k >= 0) S.rocks[k] = await readRock(id); fillRockSel(id); }
+
+// ---------------- 3. add a face ----------------
+function updateMint() {
+  const acct = wallet.state.account, r = S.rock, btn = $('mintBtn'), stub = $('stubNote'), m = $('mintMsg');
+  stub.classList.add('fm-hidden'); btn.disabled = true; btn.textContent = 'Add face'; btn.dataset.act = '';
+  const f = S.view === 'builder' ? S.face : null;
+  if (S.view !== 'builder') { m.textContent = 'Change the builder (or pick the Wallet/Custom tab) to make a new face.'; return; }
+  if (!f) { m.textContent = ''; return; }
+  if (!acct) { m.textContent = 'Connect your wallet to add faces to your rock.'; return; }
+  if (!r) { m.textContent = 'Pick one of your rocks first.'; return; }
+  if (S.mode === 'wallet') {
+    if (!eq(acct, S.addr)) { m.textContent = 'Preview only: a wallet face can only be added by its own wallet. Clear the box to use your connected wallet.'; return; }
+    if (S.coll.some((c) => c.kind === 'wallet' && eq(c.seed, acct))) { m.textContent = `Your wallet face is already on rock #${r.id} (one per wallet per rock). It's in the collection above.`; return; }
+    if (eq(r.seed, acct)) { btn.disabled = false; btn.dataset.act = 'free'; btn.textContent = `Add my wallet face to rock #${r.id} (free, gas only)`; m.textContent = ''; return; }
+    stub.innerHTML = '<b>STUB: paid wallet face.</b> This rock was forged by another wallet, so adding your wallet face costs GEAR through <code>addWalletFacePaid</code>. That needs a signed GEAR price quote from CAPs mind, and that server isn\'t live yet. This button only simulates it; nothing is sent.';
+    stub.classList.remove('fm-hidden'); btn.disabled = false; btn.dataset.act = 'sim'; btn.textContent = 'Simulate paid wallet face (stub)'; m.textContent = ''; return;
+  }
+  if (S.coll.some((c) => c.kind === 'custom' && c.hash && c.hash.toLowerCase() === f.hash.toLowerCase())) { m.textContent = 'This exact custom face is already on this rock.'; return; }
+  stub.innerHTML = '<b>STUB: custom face.</b> Custom faces are paid in GEAR through <code>addCustomFace</code>, which needs a signed price quote from CAPs mind and the finished face file pinned to IPFS. Neither is live, so this button only simulates it; nothing is sent.';
+  stub.classList.remove('fm-hidden'); btn.disabled = false; btn.dataset.act = 'sim'; btn.textContent = 'Simulate add custom face (stub)'; m.textContent = '';
+}
+$('mintBtn').onclick = async () => {
+  const m = $('mintMsg'), r = S.rock, f = S.face; if (!r || !f) return;
+  if ($('mintBtn').dataset.act === 'sim') {
+    const acct = wallet.state.account;
+    (S.sim[r.id] = S.sim[r.id] || []).push({ ...f, sim: true, seed: S.mode === 'wallet' ? acct : acct, kind: S.mode, label: f.label + ' (simulated)' });
+    await selectRock(r); S.sel = S.coll.length - 1; S.view = 'coll'; refresh(); $('mintMsg').textContent = 'Simulated: added to this page only. Nothing was sent onchain.'; return;
+  }
+  try {
+    $('mintBtn').disabled = true; m.textContent = 'Confirm in your wallet…';
+    if (!(await wallet.ensureBase())) throw new Error('Switch your wallet to Base.');
+    const account = getAddress(wallet.state.account), wc = createWalletClient({ account, chain: base, transport: custom(wallet.provider()) });
     await pub.simulateContract({ address: ROCKS, abi: ABI, functionName: 'addWalletFace', args: [BigInt(r.id), WALLET_FACE_VERSION, WALLET_VARIANT], account });
     const hash = await wc.writeContract({ address: ROCKS, abi: ABI, functionName: 'addWalletFace', args: [BigInt(r.id), WALLET_FACE_VERSION, WALLET_VARIANT] });
-    msg.innerHTML = `Sent. Waiting for Base… <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view</a>`;
+    m.innerHTML = `Sent. Waiting for Base… <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view</a>`;
     await pub.waitForTransactionReceipt({ hash });
-    msg.innerHTML = `Engraved onto rock #${r.id}. <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">tx</a>`;
-    await loadRocks(); playPrint();
-  } catch (e) { msg.textContent = explainWalletError(e); updateMint(); }
+    m.innerHTML = `Added to rock #${r.id}. <a href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">tx</a>`;
+    await reloadRock(r.id); playPrint();
+  } catch (e) { m.textContent = explainWalletError(e); updateMint(); }
 };
 
-// ---------------- export ----------------
+// ---------------- 4. download ----------------
 function updateExport() {
-  const ok = !!S.face && S.unlocked.has(unlockKey());
-  for (const id of ['vidBtn', 'pngBtn', 'svgBtn']) $(id).disabled = !ok;
-  $('exportLock').classList.toggle('fm-hidden', ok);
+  const c = S.view === 'coll' ? S.coll[S.sel] : null, ok = !!(c && c.bm);
+  for (const id of ['vidBtn', 'pngBtn', 'svgBtn', 'rockPngBtn']) $(id).disabled = !ok;
+  $('glbBtn').disabled = true;
+  $('exportLock').textContent = ok ? `Downloading ${c.active ? 'the displayed face' : 'face'} ${c.sim ? '(simulated) ' : '#' + c.i + ' '}of rock #${S.rock.id}. The rock GLB needs the CAPs Rocks render server (coming).` : 'Select a face from this rock\'s collection. Files unlock for faces that are on your rock.';
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-const baseName = () => S.face.kind === 'wallet' ? `caps-face-${S.addr.slice(0, 8)}` : `caps-face-custom-${S.face.hash.slice(2, 10)}`;
+const baseName = () => `caps-rock-${S.rock ? S.rock.id : 'x'}-` + (S.face.kind === 'wallet' ? `face-${S.face.seed ? S.face.seed.slice(0, 8) : 'wallet'}` : `face-custom-${S.face.hash.slice(2, 10)}`);
 $('svgBtn').onclick = () => download(new Blob([renderSvg(S.face.bm, S.face.kind === 'wallet' ? 'wallet-v1-pixel' : 'custom-v2')], { type: 'image/svg+xml' }), baseName() + '.svg');
 $('pngBtn').onclick = () => { const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d'), s = 1024 / 240; drawTablet(g, 0, 312 / 2400 * 1024, s); paintBitmap(g, S.face.bm, 0, 350 / 2400 * 1024, s); c.toBlob((b) => download(b, baseName() + '.png'), 'image/png'); };
+$('rockPngBtn').onclick = () => { drawRock(); rock.toBlob((b) => download(b, baseName() + '-rock-preview.png'), 'image/png'); };
 export function pickVideoType() {
   const MR = window.MediaRecorder; if (!MR) return null;
   return ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MR.isTypeSupported(t)) || null;
@@ -247,10 +327,11 @@ $('vidBtn').onclick = async () => {
 let lastAcct = null;
 wallet.subscribe((st) => {
   if (st.account === lastAcct) return; lastAcct = st.account;
-  if (st.account && (!S.addr || S.addr.toLowerCase() === (S.connectedFill || '').toLowerCase())) { S.addr = st.account; S.connectedFill = st.account; $('addrIn').value = st.account; }
+  if (st.account && (!S.addr || eq(S.addr, S.connectedFill))) { S.addr = st.account; S.connectedFill = st.account; $('addrIn').value = st.account; }
   refresh(); void loadRocks();
 });
-// test hook (headless screenshots only; does not touch the chain)
-if (new URLSearchParams(location.search).has("fmtest")) (window as any).__faceMaker = { S, refresh, playPrint, recordPrint, setMode, unlock: () => { S.unlocked.add(unlockKey()); updateExport(); } };
+// test hook (headless screenshots only; never touches the chain): fake a connected wallet holding given rocks
+if (new URLSearchParams(location.search).has('fmtest')) (window as any).__faceMaker = { S, refresh, playPrint, recordPrint, setMode, selectRock,
+  fake: (acct, rocks) => { wallet.state.account = acct; S.addr = acct; $('addrIn').value = acct; S.rocks = rocks; fillRockSel(); } };
 syncCustomSelects(); refresh();
 void wallet.init();

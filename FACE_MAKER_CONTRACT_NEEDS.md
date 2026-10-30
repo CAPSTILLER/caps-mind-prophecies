@@ -1,27 +1,33 @@
-# Face Maker ↔ CAPs Rocks contract: what exists, what's missing
+# Face Maker (/faces): what's real, what's stubbed, what the contract/backend still needs
 
-Contract: CapsRocks `0x0fa575fd563517549e714acde968051a7310aadb` on Base. It's deployed and verified, and `totalMinted()` was 1 on Oct 30 2026. The deployed bytecode contains the `addWalletFace` and `rockView` selectors.
+CapsRocks `0x0fa575fd563517549e714acde968051a7310aadb` (Base). The page is built around a rock: connect the wallet, pick a rock it holds, see the rock's face collection (read from `rockView` + `facesOf`), add faces, choose the displayed face, download.
 
-**No new contract is needed.** The deployed contract already has the face functions:
+## Flow vs contract
 
-| Need | Contract today | Face Maker |
+| Step | Contract function | Status in the app |
 |---|---|---|
-| Wallet face added only by the wallet it's seeded from | `addWalletFace(tokenId, version, variant)`: free, but only when `msg.sender` is the rock's seed wallet and owns the rock. The seed is always `msg.sender` | **Wired for real** (always version 1, variant 0; no moods) |
-| Wallet face on a rock forged by another wallet | `addWalletFacePaid(..., FaceQuote, sig)`: GEAR fee, server-signed EIP-712 quote | **Stub**: needs a quote server |
-| Multiple custom faces | `addCustomFace(tokenId, contentHash, uri, FaceQuote, sig)`: GEAR fee, dedupe per rock, `uri` = ipfs:// | **Stub**: needs a quote server and IPFS pin |
-| Several faces saved, pick one | `facesOf`, `setActiveFace`, `clearActiveFace`; the first face auto-activates | Reads `facesOf`. No "set active" UI yet |
-| Metadata refresh | Emits ERC-4906 `MetadataUpdate` on every face add; `tokenURI` = baseURI + id | — |
+| List the wallet's rocks | `totalMinted` + `rockView(id).owner` loop (not Enumerable) | **Real** (fine at today's supply; switch to Transfer logs / indexer later) |
+| Face collection of a rock | `facesOf(id, 0, n)`: wallet faces from any wallet + custom faces | **Real** |
+| Free wallet face (wallet that forged the rock) | `addWalletFace(id, 1, 0)` (free; requires `msg.sender == seed` and owner) | **Real** |
+| Paid wallet face (any other wallet holding the rock) | `addWalletFacePaid(id, 0, quote, sig)` (GEAR) | **Stub**: needs the EIP-712 GEAR quote signer (`quoteSigner`) + GEAR approve |
+| Custom face (kit parts only) | `addCustomFace(id, contentHash, uri, quote, sig)` (GEAR) | **Stub**: needs the quote signer + IPFS pin + GEAR approve |
+| Display a face on the rock | `setActiveFace(id, index)` (current holder) / `clearActiveFace` | **Real**: "Display this face on the rock" |
+| Read the displayed face | `rockView.hasActiveFace/activeFaceIndex`, `activeFace(id)` | **Real** |
+| Download face PNG / SVG / print video / 2D rock preview | none (client side) | **Real** for any face in the rock's collection |
+| Download rock GLB with the displayed face | off-chain renderer (avatar-foundry) | **Not built**, see below |
 
-## "One face per wallet"
-**The UI now enforces it:** it always mints version 1, variant 0. If the connected wallet's face is already on ANY of its rocks, it shows "Minted", unlocks export and disables minting (including onto another rock).
-**The contract still allows more:** each `(kind, wallet, version, variant)` is unique per rock only, so a direct contract call can add other variants or put the same face on a second rock. True enforcement needs a contract change: a `mapping(address => uint256) walletFaceRock` (or `bool walletFaceUsed`) checked and set in `addWalletFace`/`addWalletFacePaid` (`require(walletFaceRock[msg.sender] == 0)`), plus `require(variant == 0)` (or drop the variant argument). Since the deployed contract is not upgradable here, that means a new version/deploy. Not touched.
-
-## Off-chain pieces still to build (to remove the stubs)
-1. **`POST /api/face-quote`** `{payer, tokenId, kind}`. It returns a `FaceQuote` (whole GEAR ≈ $0.25, nonce, validUntil ≈ 10 min) signed EIP-712 by the `quoteSigner` key, which is stored in Vercel env only. Domain: name/version as in the contract's `EIP712(...)` constructor, chainId 8453, verifyingContract = CapsRocks.
-2. **Pin custom faces**: upload the SVG (`data-caps-face="custom-v2"`) to Pinata. The site already has a Pinata JWT path in `src/server/upload.ts`. Pass `ipfs://CID` as `uri` and `contentHash` = keccak256(packed 240×170 bitmap), which the page already computes.
-3. A GEAR `approve(CapsRocks, gearAmount)` step before the paid calls, or an EIP-5792 batch.
-4. Metadata server at `baseURI` that renders the active face. Check what baseURI is set to.
-5. **Freeze the generators.** `wallet_pixel` and custom v2 are marked UNFROZEN / LOCAL ONLY in caps-rocks. Once a wallet face is minted onchain as `(version 1, variant)`, the pixels must never change. Freeze `parts_wallet_baked.json` and `faces_v1.js` before anyone mints.
+## Wallet face rules
+- One wallet face per wallet: always generator version 1, variant 0 (no moods).
+- **One copy per wallet per rock.** The app blocks only a second copy of the same wallet's face on the same rock. The same wallet may put its face on other rocks, and different wallets holding the same rock can each add their own face (free only for the forging wallet).
+- The contract already enforces this per-rock rule *for variant 0*: duplicates are keyed `keccak(kind, wallet, version, variant)` per rock. It does **not** stop a direct call using another variant (1, 2, …), which would add a second face for the same wallet. To enforce strictly onchain: require `variant == 0` (or drop the argument) in `addWalletFace` / `addWalletFacePaid`, or key the duplicate check on `(Wallet, msg.sender)` only. That is a contract change (new deploy); not touched.
 
 ## Custom faces
-Custom faces use only the kit parts (border, eyes, brows, nose, mouth): pick, place, move, flip. No image uploads. The IPFS file for a custom face is the final rendered face (SVG/PNG of the 240×170 bitmap), and `contentHash` = keccak256 of that final packed bitmap. Custom mint stays stubbed until the GEAR quote signer exists.
+Kit parts only (border, eyes, brows, nose, mouth; place, move, flip). No uploads. The IPFS file is the final rendered face SVG (`renderSvg`, 240×170 1 mm bitmap), and `contentHash` = keccak256 of the final packed bitmap. The app reads a pinned custom face back from its `uri`, rebuilds the bitmap, and checks it against `contentHash` before showing/exporting it.
+
+## Still needed (backend, not contract)
+1. **Quote server** signing `FaceQuote(payer, tokenId, kind, gearAmount, nonce, validUntil)` with the `quoteSigner` key (owner sets it via `setQuoteSigner`), within `minFaceFee..maxFaceFee`, whole GEAR, TTL ≤ MAX_QUOTE_TTL.
+2. **IPFS pin** (Pinata) of the custom face SVG before `addCustomFace`.
+3. **GEAR approve** UI for the CapsRocks contract before paid adds.
+4. **Metadata / tokenURI**: `tokenURI = baseURI + id`. Something must serve that JSON with the rock and its *active* face (image + GLB links) so marketplaces and apps like Mysbase show the displayed face. Suggested: `GET /api/rocks/:id` (and as baseURI `…/api/rocks/meta/`) that reads `rockView` + `activeFace` and returns `{ name, image (rock PNG with active face), animation_url (GLB), attributes, activeFace:{kind, seed, version, variant | contentHash, uri} }`. The contract emits `MetadataUpdate` on every change already.
+5. **Rock GLB with the active face (Mysbase-ready)**: not feasible in this app today. avatar-foundry (`gen.js <seed> --style tablet`) makes the rigged 3–4 MB GLB in meters and exposes an `engraveZone` on the face tablet, but it has no step that applies a face bitmap yet, and the caps-rocks brief says the full generator stays server-side (owner-signed `/api/rocks/download`, not shipped to browsers). Needed: (a) add a face-engrave step to avatar-foundry using the same 240×170 bitmap, (b) the signed download endpoint that renders/caches by `(tokenId, generatorVersion, activeFace key)`. The app has a disabled "Rock GLB (soon)" button ready for it.
+6. **Freeze the generators** (`wallet_parts.json`/`faces_v1.js`, custom v2 parts) before real mints: the chain stores only the recipe (wallet, version, variant), so the art code must never change.
