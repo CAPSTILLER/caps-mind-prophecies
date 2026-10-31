@@ -52,9 +52,9 @@ describe('preview.glb holder gate', () => {
     return a.request(`${H}/api/rocks/${id}/view-token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct.address, message: ch.message, signature }) });
   };
   const hasAssets = fs.existsSync(process.env.ROCKGEN_ASSETS_DIR + '/rig.json');
-  it.skipIf(!hasAssets)('rock #1 is public', async () => { expect((await a.request(`${H}/api/rocks/1/preview.glb`)).status).toBe(200); expect((await a.request(`${H}/api/rocks/preview.glb?seed=${other.address}`)).status).toBe(200); });
+  it.skipIf(!hasAssets)('demo seed is public', async () => { expect((await a.request(`${H}/api/rocks/preview.glb?seed=0x0000000000000000000000000000000000000001`)).status).toBe(200); });
   it('other rocks need a holder token (before any not-found/build)', async () => {
-    for (const u of ['/api/rocks/7/preview.glb', '/api/rocks/99/preview.glb', `/api/rocks/preview.glb?seed=${holder.address}`]) {
+    for (const u of ['/api/rocks/1/preview.glb', `/api/rocks/preview.glb?seed=${other.address}`, '/api/rocks/7/preview.glb', '/api/rocks/99/preview.glb', `/api/rocks/preview.glb?seed=${holder.address}`]) {
       const r = await a.request(H + u); expect(r.status).toBe(401); expect(await r.json()).toEqual({ error: 'holder signature required' });
     }
   });
