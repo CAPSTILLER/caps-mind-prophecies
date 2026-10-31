@@ -92,7 +92,26 @@ function frame(laser) {
   sx.textAlign = 'right'; sx.fillText('CAPs ROCKS · face tablet 240×170 mm', stage.width - OX, stage.height - 40); sx.textAlign = 'left';
 }
 const viewer3d = createRockViewer($('rock3d'), (m) => { $('rock3dMsg').textContent = m || 'Drag to orbit · pinch or scroll to zoom. Tap a face in the collection to try it on.'; });
-function show3d() { const seed = S.rock ? S.rock.seed : (isAddress(S.addr || '') ? S.addr : (wallet.state.account || '0x0000000000000000000000000000000000000001')); viewer3d.setRock(seed); viewer3d.setFace(S.face ? S.face.bm : null); }
+const VIEW_TOK: Record<number, { token: string; exp: number }> = {};
+function show3d() {
+  const r = S.rock, acct = wallet.state.account, lock = $('rock3dLock'), cv = $('rock3d');
+  const tok = r && VIEW_TOK[r.id] && VIEW_TOK[r.id].exp * 1000 > Date.now() + 60_000 ? VIEW_TOK[r.id].token : '';
+  const open = !r || r.id === 1 || !!tok;
+  cv.hidden = !open; lock.hidden = open;
+  if (!open) { $('rock3dImg').src = `/api/rocks/${r.id}/face.png`; $('rock3dSign').hidden = !(acct && eq(r.owner, acct)); return; }
+  viewer3d.setRock(r ? r.seed : '0x0000000000000000000000000000000000000001', tok); viewer3d.setFace(S.face ? S.face.bm : null);
+}
+$('rock3dSign').onclick = async () => {
+  const r = S.rock, acct = wallet.state.account; if (!r || !acct) return;
+  try {
+    $('rock3dSign').disabled = true;
+    const ch = await (await fetch(`/api/rocks/${r.id}/challenge?address=${acct}`)).json();
+    const signature = await createWalletClient({ chain: base, transport: custom(wallet.provider()) }).signMessage({ account: getAddress(acct), message: ch.message });
+    const j = await (await fetch(`/api/rocks/${r.id}/view-token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct, message: ch.message, signature }) })).json();
+    if (!j.token) throw new Error(j.error || 'could not verify holder');
+    VIEW_TOK[r.id] = { token: j.token, exp: j.expiresAt }; show3d();
+  } catch (e) { $('rock3dMsg').textContent = explainWalletError(e); } finally { $('rock3dSign').disabled = false; }
+};
 function showStatic() { ex.clearRect(0, 0, engraved.width, engraved.height); if (S.face) paintBitmap(ex, S.face.bm, 0, 0, PX); frame(null); drawRock(); }
 
 let anim = null;

@@ -32,11 +32,11 @@ export function createRockViewer(canvas: HTMLCanvasElement, status: (s: string) 
     faceMat.map?.dispose(); faceMat.normalMap?.dispose();
     faceMat.map = tex(m.color, true); faceMat.normalMap = tex(m.normal, false); faceMat.needsUpdate = true;
   }
-  async function setRock(s: string) {
+  async function setRock(s: string, token = '') {
     if (!s || s.toLowerCase() === seed.toLowerCase()) return loading || undefined;
     seed = s; status('Forging rock ' + s.slice(0, 6) + '… in 3D');
     loading = (async () => {
-      const g = await new GLTFLoader().loadAsync('/api/rocks/preview.glb?seed=' + s);
+      const g = await new GLTFLoader().loadAsync('/api/rocks/preview.glb?seed=' + s + (token ? '&t=' + encodeURIComponent(token) : ''));
       if (seed !== s) return;
       if (model) scene.remove(model);
       model = g.scene; scene.add(model); faceMat = null;

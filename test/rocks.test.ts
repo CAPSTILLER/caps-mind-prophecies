@@ -41,3 +41,48 @@ describe.skipIf(!fs.existsSync(process.env.ROCKGEN_ASSETS_DIR + '/rig.json'))('r
     expect((await r2.json()).error).toMatch(/nonce/);
   });
 });
+
+describe('preview.glb holder gate', () => {
+  const rocks: Record<number, RockInfo> = { 1: { ...rock, id: 1, seed: other.address, owner: other.address }, 7: rock };
+  const rd: RockReader = { rock: async (id) => { if (!rocks[id]) throw new Error('nf'); return rocks[id]; }, ownerOf: async (id) => rocks[id].owner, verifyMessage: (address, message, signature) => verifyMessage({ address, message, signature }) };
+  const a = new Hono(); registerRockRoutes(a, rd);
+  const tok = async (acct = holder, id = 7) => {
+    const ch = await (await a.request(`${H}/api/rocks/${id}/challenge?address=${acct.address}`)).json();
+    const signature = await acct.signMessage({ message: ch.message });
+    return a.request(`${H}/api/rocks/${id}/view-token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct.address, message: ch.message, signature }) });
+  };
+  const hasAssets = fs.existsSync(process.env.ROCKGEN_ASSETS_DIR + '/rig.json');
+  it.skipIf(!hasAssets)('rock #1 is public', async () => { expect((await a.request(`${H}/api/rocks/1/preview.glb`)).status).toBe(200); expect((await a.request(`${H}/api/rocks/preview.glb?seed=${other.address}`)).status).toBe(200); });
+  it('other rocks need a holder token (before any not-found/build)', async () => {
+    for (const u of ['/api/rocks/7/preview.glb', '/api/rocks/99/preview.glb', `/api/rocks/preview.glb?seed=${holder.address}`]) {
+      const r = await a.request(H + u); expect(r.status).toBe(401); expect(await r.json()).toEqual({ error: 'holder signature required' });
+    }
+  });
+  it('non-holder cannot get a token', async () => { expect((await tok(other)).status).toBe(403); });
+  it.skipIf(!hasAssets)('valid token works (query and header)', async () => {
+    const { token } = await (await tok()).json();
+    expect((await a.request(`${H}/api/rocks/7/preview.glb?t=${token}`)).status).toBe(200);
+    expect((await a.request(`${H}/api/rocks/7/preview.glb`, { headers: { 'x-rocks-view-token': token } })).status).toBe(200);
+    expect((await a.request(`${H}/api/rocks/preview.glb?seed=${holder.address}&t=${token}`)).status).toBe(200);
+  });
+  it('wrong id, tampered, expired and sold tokens are rejected', async () => {
+    const { issueViewToken } = await import('../src/server/rocks.js');
+    const { token } = await (await tok()).json();
+    expect((await a.request(`${H}/api/rocks/8/preview.glb?t=${token}`)).status).toBe(401);
+    expect((await a.request(`${H}/api/rocks/7/preview.glb?t=${token}x`)).status).toBe(401);
+    const old = issueViewToken(7, holder.address, Date.now() - 31 * 60_000).token;
+    expect((await a.request(`${H}/api/rocks/7/preview.glb?t=${old}`)).status).toBe(401);
+    rocks[7] = { ...rock, owner: other.address };
+    try { expect((await a.request(`${H}/api/rocks/7/preview.glb?t=${token}`)).status).toBe(401); } finally { rocks[7] = rock; }
+  });
+  it('render key path', async () => {
+    const u = `${H}/api/rocks/99/preview.glb`;
+    delete process.env.ROCKS_RENDER_KEY;
+    expect((await a.request(u, { headers: { 'x-rocks-render-key': '' } })).status).toBe(401);
+    process.env.ROCKS_RENDER_KEY = 'test-key-123';
+    try {
+      expect((await a.request(u, { headers: { 'x-rocks-render-key': 'wrong' } })).status).toBe(401);
+      expect((await a.request(u, { headers: { 'x-rocks-render-key': 'test-key-123' } })).status).toBe(404); // passes gate; rock 99 does not exist
+    } finally { delete process.env.ROCKS_RENDER_KEY; }
+  });
+});
