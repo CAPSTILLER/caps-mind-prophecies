@@ -103,8 +103,8 @@ export async function checkDownload(reader: RockReader, domain: string, id: numb
   return null;
 }
 
-// ---------- holder view token (gates preview.glb for every rock except PUBLIC_ROCK) ----------
-export const PUBLIC_ROCK = 1, VIEW_TTL_S = 30 * 60;
+// ---------- holder view token (gates preview.glb for every rock) ----------
+export const VIEW_TTL_S = 30 * 60;
 export const DEMO_SEED = '0x0000000000000000000000000000000000000001';
 const b64u = (s: string) => Buffer.from(s).toString('base64url');
 function viewSig(body: string) { return createHmac('sha256', dlSecret()).update('view|' + body).digest('base64url'); }
@@ -160,24 +160,19 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     const v = parseViewToken(tokenOf(c)); if (!v || v.id !== id) return false;
     try { return (await reader.ownerOf(id)).toLowerCase() === v.address; } catch { return false; }
   };
-  let pubSeed: Promise<string> | null = null;
-  const publicSeed = () => (pubSeed ||= reader.rock(PUBLIC_ROCK).then((r) => r.seed.toLowerCase()).catch((e) => { pubSeed = null; throw e; }));
   const gated = (c: any) => !renderKeyOk(c.req.header('x-rocks-render-key'));
   const nostore = { 'cache-control': 'private, no-store' };
 
   // seed-only preview for the /faces viewer (Idle clip, half-res face; blank tablet, the page paints the face live)
-  // Public only for rock #1's seed and the demo seed; otherwise needs a holder view token for a rock with this seed.
+  // Public only for the demo seed (not a real rock); otherwise needs a holder view token for a rock with this seed.
   app.get('/api/rocks/preview.glb', async (c) => {
     const seed = c.req.query('seed') || '';
     if (!isAddress(seed)) return c.json({ error: 'seed must be an address' }, 400);
     let pub = seed.toLowerCase() === DEMO_SEED;
     if (!pub && gated(c)) {
-      pub = await publicSeed().then((s) => s === seed.toLowerCase()).catch(() => false);
-      if (!pub) {
-        const v = parseViewToken(tokenOf(c));
-        const ok = v && await reader.rock(v.id).then((r) => r.seed.toLowerCase() === seed.toLowerCase()).catch(() => false) && await holderOk(c, v.id);
-        if (!ok) return c.json(DENY, 401, nostore);
-      }
+      const v = parseViewToken(tokenOf(c));
+      const ok = v && await reader.rock(v.id).then((r) => r.seed.toLowerCase() === seed.toLowerCase()).catch(() => false) && await holderOk(c, v.id);
+      if (!ok) return c.json(DENY, 401, nostore);
     }
     try {
       const glb = await rockGlb(seed, BLANK, 'blank', true);
@@ -215,8 +210,8 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
   // public marketplace preview of the active face: Idle only, half-res face texture
   app.get('/api/rocks/:id/preview.glb', async (c) => {
     const id = idOf(c.req.param('id')); if (id == null) return c.text('bad id', 400);
-    const pub = id === PUBLIC_ROCK;
-    if (!pub && gated(c) && !(await holderOk(c, id))) return c.json(DENY, 401, nostore);
+    const pub = false;
+    if (gated(c) && !(await holderOk(c, id))) return c.json(DENY, 401, nostore);
     try { const r = await reader.rock(id), { f, bm } = await pick(r, c.req.query('face')); return c.body(await rockGlb(r.seed, bm || BLANK, faceKey(f), true) as any, 200, { 'content-type': 'model/gltf-binary', ...(pub ? { 'cache-control': 'public, max-age=60' } : nostore) }); }
     catch (e: any) { return c.text(e.message || 'error', 404); }
   });

@@ -96,7 +96,7 @@ const VIEW_TOK: Record<number, { token: string; exp: number }> = {};
 function show3d() {
   const r = S.rock, acct = wallet.state.account, lock = $('rock3dLock'), cv = $('rock3d');
   const tok = r && VIEW_TOK[r.id] && VIEW_TOK[r.id].exp * 1000 > Date.now() + 60_000 ? VIEW_TOK[r.id].token : '';
-  const open = !r || r.id === 1 || !!tok;
+  const open = !r || !!tok;
   cv.hidden = !open; lock.hidden = open;
   if (!open) { $('rock3dImg').src = `/api/rocks/${r.id}/face.png`; $('rock3dSign').hidden = !(acct && eq(r.owner, acct)); return; }
   viewer3d.setRock(r ? r.seed : '0x0000000000000000000000000000000000000001', tok); viewer3d.setFace(S.face ? S.face.bm : null);
