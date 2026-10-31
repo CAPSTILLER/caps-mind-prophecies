@@ -103,6 +103,31 @@ export async function checkDownload(reader: RockReader, domain: string, id: numb
   return null;
 }
 
+// ---------- holder view token (gates preview.glb for every rock except PUBLIC_ROCK) ----------
+export const PUBLIC_ROCK = 1, VIEW_TTL_S = 30 * 60;
+export const DEMO_SEED = '0x0000000000000000000000000000000000000001';
+const b64u = (s: string) => Buffer.from(s).toString('base64url');
+function viewSig(body: string) { return createHmac('sha256', dlSecret()).update('view|' + body).digest('base64url'); }
+export function issueViewToken(id: number, address: string, now = Date.now()) {
+  const exp = Math.floor(now / 1000) + VIEW_TTL_S, body = b64u(`${id}.${address.toLowerCase()}.${exp}`);
+  return { token: `${body}.${viewSig(body)}`, expiresAt: exp };
+}
+export function parseViewToken(t: string | undefined | null, now = Date.now()): { id: number; address: string } | null {
+  if (!t) return null;
+  const [body, sig, extra] = t.split('.'); if (!body || !sig || extra !== undefined) return null;
+  const want = Buffer.from(viewSig(body)), got = Buffer.from(sig);
+  if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
+  const m = /^(\d{1,9})\.(0x[0-9a-f]{40})\.(\d+)$/.exec(Buffer.from(body, 'base64url').toString());
+  if (!m || Number(m[3]) * 1000 < now) return null;
+  return { id: Number(m[1]), address: m[2] };
+}
+export function renderKeyOk(h: string | undefined | null) {
+  const k = (process.env.ROCKS_RENDER_KEY || '').trim(); if (!k || !h) return false;
+  const a = createHmac('sha256', 'rk').update(k).digest(), b = createHmac('sha256', 'rk').update(h.trim()).digest();
+  return timingSafeEqual(a, b);
+}
+const DENY = { error: 'holder signature required' };
+
 // ---------- generation with a tiny in-memory cache ----------
 const cache = new Map<string, Promise<Uint8Array>>();
 function rockGlb(seed: string, bm: any, key: string, preview: boolean) {
@@ -129,13 +154,34 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
   const origin = (c: any) => new URL(c.req.url).origin;
   const domain = (c: any) => (c.req.header('x-forwarded-host') || new URL(c.req.url).host);
 
+  const tokenOf = (c: any) => c.req.header('x-rocks-view-token') || c.req.query('t') || '';
+  // null = allowed (holder token for this rock, still held), else a deny reason
+  const holderOk = async (c: any, id: number) => {
+    const v = parseViewToken(tokenOf(c)); if (!v || v.id !== id) return false;
+    try { return (await reader.ownerOf(id)).toLowerCase() === v.address; } catch { return false; }
+  };
+  let pubSeed: Promise<string> | null = null;
+  const publicSeed = () => (pubSeed ||= reader.rock(PUBLIC_ROCK).then((r) => r.seed.toLowerCase()).catch((e) => { pubSeed = null; throw e; }));
+  const gated = (c: any) => !renderKeyOk(c.req.header('x-rocks-render-key'));
+  const nostore = { 'cache-control': 'private, no-store' };
+
   // seed-only preview for the /faces viewer (Idle clip, half-res face; blank tablet, the page paints the face live)
+  // Public only for rock #1's seed and the demo seed; otherwise needs a holder view token for a rock with this seed.
   app.get('/api/rocks/preview.glb', async (c) => {
     const seed = c.req.query('seed') || '';
     if (!isAddress(seed)) return c.json({ error: 'seed must be an address' }, 400);
+    let pub = seed.toLowerCase() === DEMO_SEED;
+    if (!pub && gated(c)) {
+      pub = await publicSeed().then((s) => s === seed.toLowerCase()).catch(() => false);
+      if (!pub) {
+        const v = parseViewToken(tokenOf(c));
+        const ok = v && await reader.rock(v.id).then((r) => r.seed.toLowerCase() === seed.toLowerCase()).catch(() => false) && await holderOk(c, v.id);
+        if (!ok) return c.json(DENY, 401, nostore);
+      }
+    }
     try {
       const glb = await rockGlb(seed, BLANK, 'blank', true);
-      return c.body(glb as any, 200, { 'content-type': 'model/gltf-binary', 'cache-control': 'public, max-age=86400, s-maxage=31536000, immutable' });
+      return c.body(glb as any, 200, { 'content-type': 'model/gltf-binary', ...(pub ? { 'cache-control': 'public, max-age=86400, s-maxage=31536000, immutable' } : nostore) });
     } catch (e: any) { console.error('preview.glb', e); return c.text('rock build failed: ' + (e?.message || e), 500); }
   });
 
@@ -169,7 +215,9 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
   // public marketplace preview of the active face: Idle only, half-res face texture
   app.get('/api/rocks/:id/preview.glb', async (c) => {
     const id = idOf(c.req.param('id')); if (id == null) return c.text('bad id', 400);
-    try { const r = await reader.rock(id), { f, bm } = await pick(r, c.req.query('face')); return c.body(await rockGlb(r.seed, bm || BLANK, faceKey(f), true) as any, 200, { 'content-type': 'model/gltf-binary', 'cache-control': 'public, max-age=60' }); }
+    const pub = id === PUBLIC_ROCK;
+    if (!pub && gated(c) && !(await holderOk(c, id))) return c.json(DENY, 401, nostore);
+    try { const r = await reader.rock(id), { f, bm } = await pick(r, c.req.query('face')); return c.body(await rockGlb(r.seed, bm || BLANK, faceKey(f), true) as any, 200, { 'content-type': 'model/gltf-binary', ...(pub ? { 'cache-control': 'public, max-age=60' } : nostore) }); }
     catch (e: any) { return c.text(e.message || 'error', 404); }
   });
 
@@ -177,6 +225,15 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     const id = idOf(c.req.param('id')), a = c.req.query('address') || '';
     if (id == null || !isAddress(a)) return c.json({ error: 'id and address required' }, 400);
     return c.json(challenge(domain(c), a, id), 200, { 'cache-control': 'no-store' });
+  });
+
+  // holder view token: same signed challenge as /glb. body: {address, message, signature} -> {token, expiresAt}
+  app.post('/api/rocks/:id/view-token', async (c) => {
+    const id = idOf(c.req.param('id')); if (id == null) return c.json({ error: 'bad id' }, 400);
+    const b = await c.req.json().catch(() => ({}));
+    const err = await checkDownload(reader, domain(c), id, b).catch((e) => 'chain check failed: ' + (e?.message || e));
+    if (err) return c.json({ error: err }, 403, nostore);
+    return c.json(issueViewToken(id, b.address), 200, nostore);
   });
 
   // holder-gated full GLB (all clips, full-res face). body: {address, message, signature, face?, zip?}

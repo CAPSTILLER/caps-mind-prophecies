@@ -60,6 +60,7 @@ export function facesPageBody(): string {
       <div class="panel" style="margin-top:16px">
         <h3 style="margin:0 0 8px" id="rockTitle">On your rock</h3>
         <canvas id="rock3d" style="width:100%;aspect-ratio:10/7;display:block;border-radius:12px;background:#05070c;touch-action:none"></canvas>
+        <div id="rock3dLock" hidden style="text-align:center"><img id="rock3dImg" alt="Rock face" style="width:60%;max-width:340px;image-rendering:pixelated;border-radius:12px;background:#05070c"><p class="fm-locked" style="margin:6px 0">The 3D rock is shown only to its holder.</p><button class="fm-btn" id="rock3dSign" hidden>Sign to view my rock in 3D (free, no transaction)</button></div>
         <p class="fm-locked" id="rock3dMsg" style="margin:6px 0 0">Drag to orbit · pinch or scroll to zoom. Tap a face in the collection to try it on.</p>
         <canvas id="rock" width="800" height="560" style="display:none"></canvas>
       </div>
