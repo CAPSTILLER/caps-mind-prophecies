@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { composeCustom, CUSTOM, centerX } from '../src/faces/engine.js';
 import { test, expect } from 'vitest';
 const fits=(L)=>{try{composeCustom(L);return true}catch{return false}};

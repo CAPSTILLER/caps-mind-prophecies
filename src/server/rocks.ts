@@ -231,12 +231,25 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     return c.json(issueViewToken(id, b.address), 200, nostore);
   });
 
-  // holder-gated full GLB (all clips, full-res face). body: {address, message, signature, face?, zip?}
+  // Holder-only face image download (any face on the rock, incl. mood faces). Needs a holder view token (same signed challenge).
+  // ?face=<index> (default: displayed face) &scale=1..16 (px per mm; 1 = native 240x170 grid, default 8)
+  app.get('/api/rocks/:id/face-image.png', async (c) => {
+    const id = idOf(c.req.param('id')); if (id == null) return c.json({ error: 'bad id' }, 400);
+    if (!(await holderOk(c, id))) return c.json(DENY, 401, nostore);
+    const s = c.req.query('scale') ? Number(c.req.query('scale')) : 8;
+    if (!(Number.isInteger(s) && s >= 1 && s <= 16)) return c.json({ error: 'scale must be 1..16' }, 400);
+    try {
+      const r = await reader.rock(id), { i, bm } = await pick(r, c.req.query('face'));
+      if (!bm) return c.json({ error: 'this rock has no face to download' }, 404);
+      return c.body(await facePng(bm, s) as any, 200, { 'content-type': 'image/png', 'content-disposition': `attachment; filename="caps-rock-${id}-face-${i}${s === 1 ? '' : '@' + s + 'x'}.png"`, ...nostore });
+    } catch (e: any) { return c.json({ error: e.message || 'error' }, 404, nostore); }
+  });
+
+  // Full GLB (all clips, full-res face): server-to-server ONLY (x-rocks-render-key). 3D export for users lives on rocks.gearup.wtf.
   app.post('/api/rocks/:id/glb', async (c) => {
     const id = idOf(c.req.param('id')); if (id == null) return c.json({ error: 'bad id' }, 400);
+    if (gated(c)) return c.json({ error: '3D file export is only available on rocks.gearup.wtf. On capsmind.gearup.wtf you can download your faces as images.', code: 'export_on_rocks_site' }, 403, nostore);
     const b = await c.req.json().catch(() => ({}));
-    const err = await checkDownload(reader, domain(c), id, b).catch((e) => 'chain check failed: ' + (e?.message || e));
-    if (err) return c.json({ error: err }, 403);
     try {
       const r = await reader.rock(id), { i, f, bm } = await pick(r, b.face != null ? String(b.face) : null);
       const glb = await rockGlb(r.seed, bm || BLANK, faceKey(f), false), name = `caps-rock-${id}${i >= 0 ? '-face-' + i : ''}`;

@@ -30,7 +30,7 @@ export function facesPageBody(): string {
 </style>
 <section>
   <h1 style="margin:4px 0 2px">Face Maker</h1>
-  <p class="fm-locked" style="margin-top:0">Connect your wallet, pick one of your CAPs Rocks, and see every face collected on it. Add faces, choose which one the rock displays, and download the rock with that face.</p>
+  <p class="fm-locked" style="margin-top:0">Connect your wallet, pick one of your CAPs Rocks, and see every face collected on it. Add faces, choose which one the rock displays, and download your faces as images, with that face.</p>
 
   <div class="panel fm-ctl">
     <div class="fm-step">1 · Your rock</div>
@@ -96,15 +96,12 @@ export function facesPageBody(): string {
         <div class="fm-msg" id="mintMsg"></div>
       </div>
       <div class="panel" style="margin-top:16px">
-        <div class="fm-step">4 · Download</div>
-        <p class="fm-locked" id="exportLock">Select a face from this rock's collection. Files unlock for faces that are on your rock.</p>
+        <div class="fm-step">4 · Download face image</div>
+        <p class="fm-locked" id="exportLock">Select a face on your rock. Only the rock's holder can download its faces (sign a free message, no transaction). 3D files are exported on rocks.gearup.wtf.</p>
         <div class="row">
-          <button type="button" class="fm-btn" id="pngBtn" disabled>Face PNG</button>
-          <button type="button" class="fm-btn" id="svgBtn" disabled>Face SVG</button>
+          <button type="button" class="fm-btn primary" id="pngBtn" disabled>Download face image (HD PNG)</button>
+          <button type="button" class="fm-btn" id="pngNativeBtn" disabled>Native PNG (1:1)</button>
           <button type="button" class="fm-btn" id="vidBtn" disabled>🎬 Print video</button>
-          <button type="button" class="fm-btn" id="rockPngBtn" disabled>Rock preview PNG</button>
-          <button type="button" class="fm-btn primary" id="glbBtn" disabled>Rock GLB</button>
-          <button type="button" class="fm-btn" id="glbZipBtn" disabled title="For phones whose file picker greys out .glb">Rock GLB (.zip)</button>
         </div>
         <div class="fm-msg" id="exportMsg"></div>
       </div>

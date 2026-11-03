@@ -4,7 +4,7 @@ import { base } from 'viem/chains';
 import { QUOTE_URL, parseQuote, quoteExpired } from '../src/faces/quote.js';
 import { initWalletUi, explainWalletError } from './walletUi.js';
 import { createRockViewer } from './rock3d.js';
-import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns, bitmapFromSvg } from '../src/faces/engine.js';
+import { GW, GH, WALLET_FACE_VERSION, CUSTOM, ORDER, traits, composeWallet, traitNames, MOODS, composeCustom, encodeLayout, decodeLayout, centerX, DEFAULT_LAYOUT, contentHash, renderSvg, engraveRuns, bitmapFromSvg } from '../src/faces/engine.js';
 
 const ROCKS = '0x0fa575fd563517549e714acde968051a7310aadb';
 const FACE_T = { type: 'tuple', components: [{ name: 'kind', type: 'uint8' }, { name: 'seed', type: 'address' }, { name: 'generatorVersion', type: 'uint16' }, { name: 'variant', type: 'uint32' }, { name: 'addedAt', type: 'uint64' }, { name: 'contentHash', type: 'bytes32' }, { name: 'uri', type: 'string' }] };
@@ -245,7 +245,7 @@ async function faceFromChain(f, i, r) {
     const v = Number(f.generatorVersion), variant = Number(f.variant);
     if (v !== WALLET_FACE_VERSION) return { ...base, kind: 'wallet', label: `wallet face ${short(f.seed)} (generator v${v} not in this app)` };
     const t = traits(getAddress(f.seed), variant, v), c = composeWallet(t);
-    return { ...base, ...c, kind: 'wallet', t, version: v, variant, hash: contentHash(c.bm), label: `wallet face ${short(f.seed)}`, free: eq(f.seed, r.seed) };
+    return { ...base, ...c, kind: 'wallet', t, version: v, variant, hash: contentHash(c.bm), label: variant ? `mood face ${MOODS[variant % 7]}` : `wallet face ${short(f.seed)}`, mood: variant ? MOODS[variant % 7] : null, free: eq(f.seed, r.seed) };
   }
   const out = { ...base, kind: 'custom', uri: f.uri, hash: f.contentHash, label: 'custom ' + f.contentHash.slice(0, 10) };
   try {
@@ -274,7 +274,7 @@ function renderColl() {
   S.coll.forEach((c, k) => {
     const d = document.createElement('div'); d.className = 'fm-card' + (S.view === 'coll' && S.sel === k ? ' sel' : '');
     if (c.bm) d.appendChild(thumb(c.bm)); else if (c.img) { const im = new Image(); im.src = c.img; im.alt = c.label; d.appendChild(im); } else d.appendChild(Object.assign(document.createElement('div'), { textContent: c.note || 'not renderable', style: 'padding:30px 4px' }));
-    const who = c.kind === 'wallet' ? `Wallet face · ${short(c.seed)}${c.free ? ' · forger (free)' : ''}` : `Custom · by ${short(c.seed)}`;
+    const who = c.mood ? `Mood · ${c.mood} · ${short(c.seed)}` : c.kind === 'wallet' ? `Wallet face · ${short(c.seed)}${c.free ? ' · forger (free)' : ''}` : `Custom · by ${short(c.seed)}`;
     d.insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><b>#${c.sim ? '–' : c.i}</b> ${who}${c.active ? '<span class="fm-badge">on rock</span>' : ''}${c.sim ? '<span class="fm-badge sim">simulated</span>' : ''}</div>`);
     d.onclick = () => { S.sel = k; S.view = 'coll'; if (anim) anim.stop = true; anim = null; refresh(); };
     box.appendChild(d);
@@ -393,35 +393,37 @@ $('mintBtn').onclick = async () => {
   } catch (e) { m.textContent = explainWalletError(e); updateMint(); }
 };
 
-// ---------------- 4. download ----------------
+// ---------------- 4. download face image (holder only; no 3D export here, that lives on rocks.gearup.wtf) ----------------
+const holds = () => !!(S.rock && wallet.state.account && eq(S.rock.owner, wallet.state.account));
 function updateExport() {
-  const c = S.view === 'coll' ? S.coll[S.sel] : null, ok = !!(c && c.bm);
-  for (const id of ['vidBtn', 'pngBtn', 'svgBtn', 'rockPngBtn']) $(id).disabled = !ok;
-  const g = !!(c && c.onchain && c.bm && wallet.state.account && eq(S.rock.owner, wallet.state.account));
-  $('glbBtn').disabled = $('glbZipBtn').disabled = !g;
-  $('exportLock').textContent = ok ? `Downloading ${c.active ? 'the displayed face' : 'face'} ${c.sim ? '(simulated) ' : '#' + c.i + ' '}of rock #${S.rock.id}.` + (g ? ' Rock GLB: sign a free message (no transaction) to prove you hold this rock.' : ' Rock GLB: only the holder of this rock, with an onchain face.') : 'Select a face from this rock\'s collection. Files unlock for faces that are on your rock.';
+  const c = S.view === 'coll' ? S.coll[S.sel] : null, ok = !!(c && c.onchain && holds());
+  $('pngBtn').disabled = $('pngNativeBtn').disabled = !ok; $('vidBtn').disabled = !(c && c.bm && holds());
+  $('exportLock').textContent = ok ? `Face #${c.i} (${c.label}) of rock #${S.rock.id}. Sign a free message (no transaction) to prove you hold this rock. 3D files are exported on rocks.gearup.wtf.` : 'Select a face on your rock. Only the rock\'s holder can download its faces as images. 3D files are exported on rocks.gearup.wtf.';
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 const baseName = () => `caps-rock-${S.rock ? S.rock.id : 'x'}-` + (S.face.kind === 'wallet' ? `face-${S.face.seed ? S.face.seed.slice(0, 8) : 'wallet'}` : `face-custom-${S.face.hash.slice(2, 10)}`);
-$('svgBtn').onclick = () => download(new Blob([renderSvg(S.face.bm, S.face.kind === 'wallet' ? 'wallet-v1-pixel' : 'custom-v2')], { type: 'image/svg+xml' }), baseName() + '.svg');
-$('pngBtn').onclick = () => { const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d'), s = 1024 / 240; drawTablet(g, 0, 312 / 2400 * 1024, s); paintBitmap(g, S.face.bm, 0, 350 / 2400 * 1024, s); c.toBlob((b) => download(b, baseName() + '.png'), 'image/png'); };
-$('rockPngBtn').onclick = () => { if (viewer3d.ready) return viewer3d.canvas.toBlob((b) => download(b, baseName() + '-rock-3d.png'), 'image/png'); drawRock(); rock.toBlob((b) => download(b, baseName() + '-rock-preview.png'), 'image/png'); };
-async function downloadGlb(zip) {
-  const m = $('exportMsg'), c = S.coll[S.sel], acct = wallet.state.account, id = S.rock.id;
+async function viewToken(r) {
+  const t = VIEW_TOK[r.id]; if (t && t.exp * 1000 > Date.now() + 30_000) return t.token;
+  const acct = wallet.state.account;
+  const ch = await (await fetch(`/api/rocks/${r.id}/challenge?address=${acct}`)).json();
+  const signature = await createWalletClient({ chain: base, transport: custom(wallet.provider()) }).signMessage({ account: getAddress(acct), message: ch.message });
+  const j = await (await fetch(`/api/rocks/${r.id}/view-token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct, message: ch.message, signature }) })).json();
+  if (!j.token) throw new Error(j.error || 'could not verify holder');
+  VIEW_TOK[r.id] = { token: j.token, exp: j.expiresAt }; return j.token;
+}
+async function downloadFace(scale) {
+  const m = $('exportMsg'), c = S.coll[S.sel], r = S.rock; if (!c || !r || !holds()) return;
   try {
-    m.className = 'fm-msg'; m.textContent = 'Sign the download message in your wallet (free, no transaction)…';
-    const ch = await (await fetch(`/api/rocks/${id}/challenge?address=${acct}`)).json();
-    const wc = createWalletClient({ chain: base, transport: custom(wallet.provider()) });
-    const signature = await wc.signMessage({ account: getAddress(acct), message: ch.message });
-    m.textContent = 'Forging your rock with face #' + c.i + '…';
-    const r = await fetch(`/api/rocks/${id}/glb`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: acct, message: ch.message, signature, face: c.i, zip }) });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'download failed (' + r.status + ')');
-    const b = await r.blob(); download(b, `caps-rock-${id}-face-${c.i}.${zip ? 'zip' : 'glb'}`);
-    m.className = 'fm-msg ok'; m.textContent = `Downloaded (${(b.size / 1048576).toFixed(1)} MB). Rigged, 7 clips, metres, feet on the floor: ready for Mysbase.`;
+    m.className = 'fm-msg'; m.textContent = 'Sign the free holder message in your wallet if asked (no transaction)…';
+    const tok = await viewToken(r);
+    const res = await fetch(`/api/rocks/${r.id}/face-image.png?face=${c.i}&scale=${scale}`, { headers: { 'x-rocks-view-token': tok } });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'download failed (' + res.status + ')');
+    const b = await res.blob(); download(b, `caps-rock-${r.id}-face-${c.i}${scale === 1 ? '' : '@' + scale + 'x'}.png`);
+    m.className = 'fm-msg ok'; m.textContent = `Saved face #${c.i} as PNG (${(b.size / 1024).toFixed(0)} KB).`;
   } catch (e) { m.className = 'fm-msg bad'; m.textContent = explainWalletError(e); }
 }
-$('glbBtn').onclick = () => downloadGlb(false);
-$('glbZipBtn').onclick = () => downloadGlb(true);
+$('pngBtn').onclick = () => downloadFace(8);
+$('pngNativeBtn').onclick = () => downloadFace(1);
 export function pickVideoType() {
   const MR = window.MediaRecorder; if (!MR) return null;
   return ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MR.isTypeSupported(t)) || null;
