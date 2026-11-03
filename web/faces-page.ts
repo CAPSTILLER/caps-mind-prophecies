@@ -160,7 +160,7 @@ const eq = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 function refresh() {
   let msg = '';
-  try { S.face = currentFace(); } catch (e) { S.face = null; msg = String(e.message || e); }
+  try { S.face = currentFace(); S.lastGood = S.face; S.faceBad = false; } catch (e) { S.face = S.mode === 'custom' && S.lastGood ? S.lastGood : null; S.faceBad = true; msg = String(e.message || e) + (S.face ? ' (showing your last working face; move the part to fix)' : ''); }
   if (S.view === 'builder' && S.mode === 'custom') { $('customMsg').textContent = msg; $('customMsg').className = 'fm-msg ' + (msg ? 'bad' : ''); if (!msg) $('codeIn').value = S.face.code; }
   if (S.view === 'builder' && S.mode === 'wallet' && S.face) { const n = traitNames(S.face.t); delete n.mood; $('traitsOut').innerHTML = Object.entries(n).map(([k, v]) => `${k}: <b>${v === true ? 'yes' : v === false ? 'no' : v}</b>`).join(' · '); }
   else if (S.mode === 'wallet') $('traitsOut').textContent = '';
@@ -179,7 +179,20 @@ function setPart(t, id) {
   const old = S.layout.parts.find((q) => q.t === t), rest = S.layout.parts.filter((q) => q.t !== t);
   if (id < 0) { S.layout.parts = rest; return; }
   const yDef = { eye: 50, brow: 26, nose: 92, mouth: 112 }[t];
-  rest.push({ t, id, x: centerX(t, id), y: old ? old.y : yDef, ...(old && old.mirror ? { mirror: true } : {}) }); S.layout.parts = rest;
+  const np = { t, id, x: centerX(t, id), y: old ? old.y : yDef, ...(old && old.mirror ? { mirror: true } : {}) };
+  rest.push(np); S.layout.parts = rest;
+  autoFit(np);
+}
+const fits = () => { try { composeCustom(S.layout); return true; } catch { return false; } };
+// A taller part (e.g. the Long nose) can collide with its neighbours; find the nearest spot that fits instead of blanking the face.
+function autoFit(np) {
+  if (fits()) return;
+  const y0 = np.y;
+  for (let d = 1; d <= 60; d++) for (const y of [y0 - d, y0 + d]) { if (y < 0 || y > 255) continue; np.y = y; if (fits()) return; }
+  np.y = y0;
+  const below = S.layout.parts.filter((q) => q !== np && q.y > np.y), saved = below.map((q) => q.y);
+  for (let d = 1; d <= 60; d++) { below.forEach((q, i) => (q.y = saved[i] + d)); if (fits()) return; }
+  below.forEach((q, i) => (q.y = saved[i]));
 }
 $('tabWallet').onclick = () => setMode('wallet'); $('tabCustom').onclick = () => setMode('custom');
 function setMode(m) { S.mode = m; viewBuilder(); $('tabWallet').classList.toggle('on', m === 'wallet'); $('tabCustom').classList.toggle('on', m === 'custom'); $('walletCtl').classList.toggle('fm-hidden', m !== 'wallet'); $('customCtl').classList.toggle('fm-hidden', m !== 'custom'); if (anim) anim.stop = true; anim = null; refresh(); }
@@ -301,6 +314,7 @@ function updateMint() {
   const f = S.view === 'builder' ? S.face : null;
   if (S.view !== 'builder') { m.textContent = 'Change the builder (or pick the Wallet/Custom tab) to make a new face.'; return; }
   if (!f) { m.textContent = ''; return; }
+  if (S.faceBad) { m.textContent = 'Fix the highlighted problem before minting.'; return; }
   if (!acct) { m.textContent = 'Connect your wallet to add faces to your rock.'; return; }
   if (!r) { m.textContent = 'Pick one of your rocks first.'; return; }
   if (S.mode === 'wallet') {
@@ -316,6 +330,7 @@ function updateMint() {
 }
 async function mintCustom() {
   const m = $('mintMsg'), r = S.rock, f = S.face, btn = $('mintBtn');
+  if (S.faceBad || !f) return;
   btn.disabled = true; m.className = 'fm-msg';
   try {
     if (!(await wallet.ensureBase())) throw new Error('Switch your wallet to Base.');
