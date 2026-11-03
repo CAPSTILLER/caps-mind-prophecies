@@ -261,12 +261,25 @@ async function selectRock(r) {
   $('rockInfo').innerHTML = r ? `Forged by <b>${short(r.seed)}</b>${eq(r.seed, acct) ? ' (this wallet: your wallet face is free here)' : ' (another wallet: your wallet face costs GEAR here)'} · held by <b>${short(r.owner)}</b> · ${r.faces.length} face(s) onchain` : '';
   if (r) {
     S.coll = await Promise.all(r.faces.map((f, i) => faceFromChain(f, i, r)));
+    S.exploit = null;
+    try { // server-side face info: mood faces v2 (Axle's art) + exploit status; fail soft
+      const info = await (await fetch(`/api/rocks/${r.id}/faces-info`)).json();
+      for (const fi of info.faces || []) {
+        const c = S.coll[fi.i]; if (!c || c.kind === 'wallet') continue;
+        if (fi.kind === 'mood') { c.mood = fi.mood || 'Mood'; c.label = `mood face ${c.mood}`; }
+        if (!c.bm && fi.bitmap) { c.bm = unhexBits(fi.bitmap); c.layers = new Uint8Array(GW * GH).fill(7); c.img = null; c.note = null; }
+        if (!c.bm && fi.placeholder) c.note = 'face art temporarily unavailable';
+      }
+      if (info.exploit && info.exploit.count > 0) { S.exploit = info.exploit; for (const k of info.exploit.indices || []) if (S.coll[k]) S.coll[k].exploited = true; }
+    } catch { /* keep client-side results */ }
+    if (S.exploit) $('rockInfo').insertAdjacentHTML('beforeend', ` · <span class="fm-badge exploit">Exploited Faces: ${S.exploit.count}</span>`);
     for (const s of S.sim[r.id] || []) S.coll.push(s);
     S.sel = r.hasActive ? r.active : S.coll.length ? 0 : -1;
     S.view = S.sel >= 0 ? 'coll' : 'builder';
   } else S.view = 'builder';
   refresh();
 }
+function unhexBits(h) { const b = h.replace(/^0x/, ''), o = new Uint8Array(GW * GH); for (let i = 0; i < o.length; i++) o[i] = (parseInt(b.substr((i >> 3) * 2, 2), 16) >> (7 - (i & 7))) & 1; return o; }
 function thumb(bm) { const c = document.createElement('canvas'); c.width = 240; c.height = 178; const g = c.getContext('2d'); drawTablet(g, 0, 0, 1); paintBitmap(g, bm, 0, 3.8, 1); return c; }
 function renderColl() {
   const box = $('coll'); box.innerHTML = '';
@@ -275,7 +288,7 @@ function renderColl() {
     const d = document.createElement('div'); d.className = 'fm-card' + (S.view === 'coll' && S.sel === k ? ' sel' : '');
     if (c.bm) d.appendChild(thumb(c.bm)); else if (c.img) { const im = new Image(); im.src = c.img; im.alt = c.label; d.appendChild(im); } else d.appendChild(Object.assign(document.createElement('div'), { textContent: c.note || 'not renderable', style: 'padding:30px 4px' }));
     const who = c.mood ? `Mood · ${c.mood} · ${short(c.seed)}` : c.kind === 'wallet' ? `Wallet face · ${short(c.seed)}${c.free ? ' · forger (free)' : ''}` : `Custom · by ${short(c.seed)}`;
-    d.insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><b>#${c.sim ? '–' : c.i}</b> ${who}${c.active ? '<span class="fm-badge">on rock</span>' : ''}${c.sim ? '<span class="fm-badge sim">simulated</span>' : ''}</div>`);
+    d.insertAdjacentHTML('beforeend', `<div style="margin-top:6px"><b>#${c.sim ? '–' : c.i}</b> ${who}${c.active ? '<span class="fm-badge">on rock</span>' : ''}${c.sim ? '<span class="fm-badge sim">simulated</span>' : ''}${c.exploited ? '<span class="fm-badge exploit">exploited</span>' : ''}</div>`);
     d.onclick = () => { S.sel = k; S.view = 'coll'; if (anim) anim.stop = true; anim = null; refresh(); };
     box.appendChild(d);
   });

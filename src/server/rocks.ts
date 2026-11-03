@@ -7,6 +7,7 @@ import { base } from 'viem/chains';
 import { zipSync } from 'fflate';
 import { traits, composeWallet, bitmapFromSvg, contentHash, WALLET_FACE_VERSION } from '../faces/engine.js';
 import { IPFS_GATEWAYS, ipfsPath } from '../tablets.js';
+import { axleFace, exploitStatus, type AxleFace } from './axleFaces.js';
 // rockgen (three.js, gltf-transform, private assets) loads lazily, only on PNG/GLB routes,
 // so the page and metadata routes never depend on it at cold start.
 let rgP: Promise<any> | null = null;
@@ -62,7 +63,7 @@ export function chainRockReader(rpcUrls: string[]): RockReader {
 }
 
 // ---------- faces -> bitmap ----------
-async function faceBitmap(f: ChainFace, fetchImpl: typeof fetch): Promise<Uint8Array | number[] | null> {
+async function faceBitmap(f: ChainFace, fetchImpl: typeof fetch, tokenId?: number): Promise<Uint8Array | number[] | null> {
   if (f.kind === 0) return f.generatorVersion === WALLET_FACE_VERSION ? composeWallet(traits(getAddress(f.seed), f.variant, f.generatorVersion)).bm : null;
   const p = ipfsPath(f.uri), urls = p ? IPFS_GATEWAYS.map((g) => g + p) : /^https:\/\//.test(f.uri) ? [f.uri] : [];
   for (const u of urls) {
@@ -72,6 +73,8 @@ async function faceBitmap(f: ChainFace, fetchImpl: typeof fetch): Promise<Uint8A
       if (bm && contentHash(bm).toLowerCase() === f.contentHash.toLowerCase()) return bm;
     } catch { /* next gateway */ }
   }
+  // not a kit custom face (e.g. a mood face v2 with Axle's own art): use mywally's rendered PNG
+  if (tokenId != null) { const a = await axleFace(tokenId, f.contentHash, fetchImpl); if (a) return a.bm; }
   return null;
 }
 const faceKey = (f: ChainFace | null) => (f ? `${f.kind}:${f.seed}:${f.generatorVersion}:${f.variant}:${f.contentHash}` : 'blank');
@@ -141,15 +144,16 @@ function rockGlb(seed: string, bm: any, key: string, preview: boolean) {
 }
 export async function facePng(bm: any, s = 4) { const g = await rockgen(); const m = g.faceMaps(bm, s); return g.encodePng(m.w, m.h, m.color) as Buffer; }
 const BLANK = new Uint8Array(240 * 170);
+const hexBits = (bm: ArrayLike<number>) => { const o = new Uint8Array(Math.ceil(bm.length / 8)); for (let i = 0; i < bm.length; i++) if (bm[i]) o[i >> 3] |= 0x80 >> (i & 7); return '0x' + Buffer.from(o).toString('hex'); };
 
 export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl: typeof fetch = fetch) {
   const idOf = (s: string) => (/^\d{1,9}$/.test(s) ? Number(s) : null);
   const pick = async (r: RockInfo, q?: string | null) => {
     const i = q != null && q !== '' ? Number(q) : r.hasActive ? r.active : -1;
     if (i >= 0 && !(Number.isInteger(i) && i < r.faces.length)) throw new Error('no face #' + q + ' on this rock');
-    const f = i >= 0 ? r.faces[i] : null, bm = f ? await faceBitmap(f, fetchImpl) : null;
-    if (f && !bm) throw new Error('face #' + i + ' could not be rebuilt (generator version or file unavailable)');
-    return { i, f, bm };
+    const f = i >= 0 ? r.faces[i] : null, got = f ? await faceBitmap(f, fetchImpl, r.id) : null;
+    // unreadable face (source down, unknown generator): placeholder blank tablet, never a 500; not cached as the real face
+    return { i, f, bm: got || (f ? BLANK : null), placeholder: !!f && !got };
   };
   const origin = (c: any) => new URL(c.req.url).origin;
   const domain = (c: any) => (c.req.header('x-forwarded-host') || new URL(c.req.url).host);
@@ -185,6 +189,7 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     const id = idOf(c.req.param('id')); if (id == null) return c.json({ error: 'bad id' }, 400);
     let r: RockInfo; try { r = await reader.rock(id); } catch (e) { return c.json({ error: 'rock not found or chain read failed' }, 404); }
     const o = origin(c), af = r.hasActive ? r.faces[r.active] : null;
+    const ex = r.faces.some((f) => f.kind === 1) ? await exploitStatus(id, fetchImpl) : null;
     return c.json({
       name: `CAPs Rock #${id}`,
       description: 'A CAPs Rock: a rigged Crushed Prophecy stone avatar forged from a wallet, wearing its chosen face. Faces are added and chosen at capsmind.gearup.wtf/faces.',
@@ -197,13 +202,30 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
         { trait_type: 'Faces Collected', value: r.faces.length },
         { trait_type: 'Active Face', value: af ? (af.kind === 0 ? 'Wallet face ' + af.seed.slice(0, 6) + '…' + af.seed.slice(-4) : 'Custom ' + af.contentHash.slice(0, 10)) : 'Blank tablet' },
         { display_type: 'date', trait_type: 'Forged', value: r.forgedAt },
+        ...(ex && ex.count > 0 ? [{ display_type: 'number', trait_type: 'Exploited Faces', value: ex.count }] : []),
       ],
     }, 200, { 'cache-control': 'public, max-age=60, s-maxage=60' });
   });
 
+  // Public face info for the /faces collection: kind (wallet|mood|custom), mood name, packed 240x170 bitmap, plus exploit flags.
+  app.get('/api/rocks/:id/faces-info', async (c) => {
+    const id = idOf(c.req.param('id')); if (id == null) return c.json({ error: 'bad id' }, 400);
+    let r: RockInfo; try { r = await reader.rock(id); } catch { return c.json({ error: 'rock not found or chain read failed' }, 404); }
+    const ex = r.faces.some((f) => f.kind === 1) ? await exploitStatus(id, fetchImpl) : { count: 0, indices: [], unverified: 0 };
+    const faces = await Promise.all(r.faces.map(async (f, i) => {
+      if (f.kind === 0) return { i, kind: 'wallet' };
+      const kit = await faceBitmap({ ...f }, fetchImpl); // kit custom face (IPFS SVG) first
+      if (kit) return { i, kind: 'custom', bitmap: hexBits(kit) };
+      const a = await axleFace(id, f.contentHash, fetchImpl);
+      return a ? { i, kind: a.kind, mood: a.mood, bitmap: hexBits(a.bm) } : { i, kind: 'custom', placeholder: true };
+    }));
+    const ok = faces.every((f: any) => !f.placeholder);
+    return c.json({ id, faces, exploit: ex }, 200, { 'cache-control': ok ? 'public, max-age=60' : 'no-store' });
+  });
+
   app.get('/api/rocks/:id/face.png', async (c) => {
     const id = idOf(c.req.param('id')); if (id == null) return c.text('bad id', 400);
-    try { const r = await reader.rock(id), { bm } = await pick(r, c.req.query('face')); return c.body(await facePng(bm || BLANK) as any, 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=60' }); }
+    try { const r = await reader.rock(id), { bm, placeholder } = await pick(r, c.req.query('face')); return c.body(await facePng(bm || BLANK) as any, 200, { 'content-type': 'image/png', 'cache-control': placeholder ? 'no-store' : 'public, max-age=60', ...(placeholder ? { 'x-face-placeholder': '1' } : {}) }); }
     catch (e: any) { return c.text(e.message || 'error', 404); }
   });
 
@@ -212,7 +234,7 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     const id = idOf(c.req.param('id')); if (id == null) return c.text('bad id', 400);
     const pub = false;
     if (gated(c) && !(await holderOk(c, id))) return c.json(DENY, 401, nostore);
-    try { const r = await reader.rock(id), { f, bm } = await pick(r, c.req.query('face')); return c.body(await rockGlb(r.seed, bm || BLANK, faceKey(f), true) as any, 200, { 'content-type': 'model/gltf-binary', ...(pub ? { 'cache-control': 'public, max-age=60' } : nostore) }); }
+    try { const r = await reader.rock(id), { f, bm, placeholder } = await pick(r, c.req.query('face')); return c.body(await rockGlb(r.seed, bm || BLANK, faceKey(f) + (placeholder ? ':ph' : ''), true) as any, 200, { 'content-type': 'model/gltf-binary', ...(pub ? { 'cache-control': 'public, max-age=60' } : nostore) }); }
     catch (e: any) { return c.text(e.message || 'error', 404); }
   });
 
@@ -251,8 +273,8 @@ export function registerRockRoutes(app: Hono<any>, reader: RockReader, fetchImpl
     if (gated(c)) return c.json({ error: '3D file export is only available on rocks.gearup.wtf. On capsmind.gearup.wtf you can download your faces as images.', code: 'export_on_rocks_site' }, 403, nostore);
     const b = await c.req.json().catch(() => ({}));
     try {
-      const r = await reader.rock(id), { i, f, bm } = await pick(r, b.face != null ? String(b.face) : null);
-      const glb = await rockGlb(r.seed, bm || BLANK, faceKey(f), false), name = `caps-rock-${id}${i >= 0 ? '-face-' + i : ''}`;
+      const r = await reader.rock(id), { i, f, bm, placeholder } = await pick(r, b.face != null ? String(b.face) : null);
+      const glb = await rockGlb(r.seed, bm || BLANK, faceKey(f) + (placeholder ? ':ph' : ''), false), name = `caps-rock-${id}${i >= 0 ? '-face-' + i : ''}`;
       if (b.zip) {
         const z = zipSync({ 'rock.glb': [glb, { level: 6 }], 'README.txt': new TextEncoder().encode(`CAPs Rock #${id}\nFace: ${i >= 0 ? '#' + i : 'blank tablet'}\nRigged (36 Mixamo joints), 7 clips, metres, feet on the floor.\n`) });
         return c.body(z as any, 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${name}.zip"`, 'cache-control': 'no-store' });

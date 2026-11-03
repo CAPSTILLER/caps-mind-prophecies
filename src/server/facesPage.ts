@@ -26,6 +26,7 @@ export function facesPageBody(): string {
 .fm-card b { color:var(--text); }
 .fm-badge { display:inline-block; background:var(--walletBlue); color:#fff; border-radius:999px; padding:1px 8px; font-size:11px; margin-left:4px; }
 .fm-badge.sim { background:#f5b942; color:#111; }
+.fm-badge.exploit { background:#d9463b; color:#fff; }
 .fm-step { font-size:12px; letter-spacing:.08em; color:var(--walletBlue); text-transform:uppercase; }
 </style>
 <section>
